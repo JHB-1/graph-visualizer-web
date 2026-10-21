@@ -5,10 +5,29 @@
 namespace
 {
 	std::optional<gv::Document> clipboard;
+	std::map<std::string, std::string> live_styles;
+
+	void finish_style(const std::string& graph_id)
+	{
+		if (live_styles.erase(graph_id) == 0)
+			return;
+
+		const auto found = graphs.find(graph_id);
+		if (found != graphs.end())
+			found->second->graph.session().endEdit();
+	}
 
 	json web_execute(const json& request)
 	{
 		const std::string op = request.at("op");
+		const std::string graph_id = request.value("graph_id", "");
+		const std::string action = request.value("action", "");
+		const bool live = op == "web_edit" and request.contains("edit_key") and action != "end_style";
+		const bool reading = op == "web_read" or op == "status" or op == "query" or op == "snapshot";
+		const bool feedback = op == "ui" and (action == "hover" or action == "active");
+		if (not live and not reading and not feedback and action != "end_style")
+			finish_style(graph_id);
+
 		if (op != "web_read" and op != "web_edit")
 			return execute(request);
 
@@ -23,8 +42,13 @@ namespace
 		if (op == "web_edit")
 		{
 			check_revision(request, state);
-			const std::string action = request.at("action");
-			if (action == "select_all")
+			if (action == "end_style")
+			{
+				const auto pending = live_styles.find(graph_id);
+				if (pending != live_styles.end() and pending->second == request.at("edit_key").get<std::string>())
+					finish_style(graph_id);
+			}
+			else if (action == "select_all")
 			{
 				session.clearSelection();
 				for (const gv::NodeVisual& node : session.scene().nodes)
@@ -66,34 +90,129 @@ namespace
 			else
 			{
 				const gv::Document before = session.document();
-				session.beginEdit();
+				gv::Document candidate = before;
+				const bool style_action = action == "settings" or action == "fonts" or action == "selection_style" or action == "theme";
+				if (live and not style_action)
+					throw fault("invalid_input", "Only style edits can be grouped");
+
+				if (action == "settings")
+				{
+					if (request.contains("defaults"))
+						candidate.defaults = request.at("defaults").get<gv::Defaults>();
+
+					if (request.contains("canvas"))
+						candidate.canvas = request.at("canvas").get<gv::CanvasStyle>();
+				}
+				else if (action == "fonts")
+				{
+					const int policy = request.at("missing");
+					if (policy < 0 or 2 < policy)
+						throw fault("invalid_input", "Invalid font policy");
+
+					candidate.fonts.embed = request.at("embed");
+					candidate.fonts.missing = static_cast<gv::MissingFontPolicy>(policy);
+					candidate.fonts.fallbackFamily = request.at("fallbackFamily");
+				}
+				else if (action == "theme")
+				{
+					const gv::ThemeProfile theme = gv::parse_theme_profile(request.at("text").get<std::string>());
+					candidate.defaults = theme.defaults;
+					candidate.canvas = theme.canvas;
+				}
+				else if (action == "selection_style")
+				{
+					const std::uint64_t id = parse_id(request.at("id"));
+					bool found_item = false;
+					if (request.at("kind") == "node")
+					{
+						for (gv::Node& node : candidate.nodes)
+							if (node.id == id)
+							{
+								node.style = request.at("style").get<gv::NodeStyleOverrides>();
+								node.shape = request.at("shape").get<std::optional<gv::NodeShape>>();
+								node.profile = request.at("profile").get<std::optional<std::string>>();
+								found_item = true;
+							}
+					}
+					else if (request.at("kind") == "edge")
+					{
+						for (gv::Edge& edge : candidate.edges)
+							if (edge.id == id)
+							{
+								edge.style = request.at("style").get<gv::EdgeStyleOverrides>();
+								edge.routing = request.at("routing").get<std::optional<gv::RoutingMode>>();
+								edge.profile = request.at("profile").get<std::optional<std::string>>();
+								found_item = true;
+							}
+					}
+
+					if (not found_item)
+						throw fault("missing_id", "Style target does not exist");
+				}
+
+				// 입력 오류는 진행 중인 편집의 마지막 유효 값을 보존
+				if (style_action)
+					gv::validate(candidate);
+
+				if (live)
+				{
+					const std::string key = request.at("edit_key");
+					const auto pending = live_styles.find(graph_id);
+					if (pending != live_styles.end() and pending->second != key)
+						finish_style(graph_id);
+
+					if (not live_styles.contains(graph_id))
+					{
+						live_styles.emplace(graph_id, key);
+						try
+						{
+							session.beginEdit();
+						}
+						catch (...)
+						{
+							live_styles.erase(graph_id);
+							throw;
+						}
+					}
+				}
+				else
+					session.beginEdit();
+
 				try
 				{
 					if (action == "settings")
 					{
-						if (request.contains("defaults"))
-							session.setDefaults(request.at("defaults").get<gv::Defaults>());
-
-						if (request.contains("canvas"))
-							session.setCanvasStyle(request.at("canvas").get<gv::CanvasStyle>());
+						session.setDefaults(candidate.defaults);
+						session.setCanvasStyle(candidate.canvas);
 					}
 					else if (action == "theme")
 					{
-						const gv::ThemeProfile theme = gv::parse_theme_profile(request.at("text").get<std::string>());
-						session.setDefaults(theme.defaults);
-						session.setCanvasStyle(theme.canvas);
+						session.setDefaults(candidate.defaults);
+						session.setCanvasStyle(candidate.canvas);
 					}
 					else if (action == "fonts")
+						session.setFontSettings(candidate.fonts);
+					else if (action == "selection_style")
 					{
-						gv::FontSettings fonts = before.fonts;
-						const int policy = request.at("missing");
-						if (policy < 0 or 2 < policy)
-							throw fault("invalid_input", "Invalid font policy");
-
-						fonts.embed = request.at("embed");
-						fonts.missing = static_cast<gv::MissingFontPolicy>(policy);
-						fonts.fallbackFamily = request.at("fallbackFamily");
-						session.setFontSettings(std::move(fonts));
+						const std::uint64_t id = parse_id(request.at("id"));
+						if (request.at("kind") == "node")
+						{
+							for (const gv::Node& node : candidate.nodes)
+								if (node.id == id)
+								{
+									session.setNodeProfile(id, node.profile);
+									session.setNodeShape(id, node.shape);
+									session.setNodeStyle(id, node.style);
+								}
+						}
+						else
+							for (const gv::Edge& edge : candidate.edges)
+								if (edge.id == id)
+								{
+									session.setEdgeProfile(id, edge.profile);
+									session.setEdgeRouting(id, edge.routing);
+									session.setEdgeStyle(id, edge.style);
+								}
 					}
 					else if (action == "delete")
 						session.deleteSelection();
@@ -137,11 +256,16 @@ namespace
 						throw fault("invalid_input", "Unknown web command");
 
 					// 여러 설정을 문서 이력 한 건으로 반영
-					session.endEdit();
+					if (not live)
+						session.endEdit();
 				}
 				catch (...)
 				{
 					session.cancelEdit();
+					live_styles.erase(graph_id);
+					if (session.document() != before)
+						increment(state);
+
 					throw;
 				}
 

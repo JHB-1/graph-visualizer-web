@@ -45,19 +45,21 @@
 					<section class="control-section"><h2>선택 속성 <span id="selection-count">0</span></h2>
 						<label class="full-field">항목<select id="object-picker"><option value="">선택 없음</option></select></label>
 						<div id="inspector"><div class="button-row"><button id="expand">접기/펼침</button><button id="scope">내부 보기</button><button id="scope-root">최상위</button></div>
-							<form id="selection-form" class="field-list"></form><div class="button-row"><button id="reset-style">스타일 상속 복구</button><button id="reverse-edge">방향 뒤집기</button></div>
+							<form id="selection-style-form" class="field-list" aria-label="선택 스타일"></form>
+							<details><summary>기하와 연결 속성</summary><form id="selection-form" class="field-list"></form></details>
+							<div class="button-row"><button id="reset-style">스타일 상속 복구</button><button id="reverse-edge">방향 뒤집기</button></div>
 							<details><summary>원본 데이터</summary><pre id="details">노드 또는 엣지를 선택하세요.</pre></details></div>
 					</section>
 					<p class="hint">드래그 이동 · Shift 다중 선택 · 우하단 핸들 크기 조절<br>빈 공간 드래그 이동 · 휠 확대/축소</p>
 				</section>
 				<section id="panel-theme" role="tabpanel" aria-labelledby="tab-theme" hidden>
-					<h1>스타일</h1><p class="panel-description">코어 기본값 → 명명 프로파일 → 개별 설정</p>
+					<h1>스타일</h1><p class="panel-description">코어 기본값 → 명명 프로파일 → 개별 설정<br>값을 변경하면 바로 반영됩니다.</p>
 					<form id="theme-form" class="field-list"></form>
 					<section class="control-section"><h2>문서 폰트</h2><form id="font-form" class="field-list"></form>
 						<p class="hint">브라우저에 설치된 글꼴을 사용합니다. 누락 정책은 문서에 저장되며 OS 글꼴 설치 대화상자는 표시하지 않습니다.</p></section>
 					<section class="control-section"><h2>스타일 프로파일 입출력</h2><p class="hint">코어 ThemeProfile 형식 · 개별 설정값 묶음</p>
 						<textarea id="theme-text" spellcheck="false" aria-label="코어 스타일 프로파일 텍스트" rows="8"></textarea>
-						<div class="button-row"><button id="theme-apply">텍스트 적용</button><button id="theme-export">.gvtheme 저장</button></div>
+						<div class="button-row"><button id="theme-export">.gvtheme 저장</button></div>
 						<label class="file-button">프로파일 파일 열기<input id="theme-import" type="file" accept=".gvtheme,text/plain" hidden></label>
 					</section>
 				</section>

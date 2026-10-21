@@ -116,6 +116,7 @@ export interface GraphError extends Error {code?: string}
 export interface GraphTransport
 {
 	readonly graphId: string;
+	beforeExport?(): Promise<void>;
 	request(op: string, fields?: JsonObject): Promise<JsonObject>;
 	downloadFile?(name: string, content: Blob): Promise<void>;
 }

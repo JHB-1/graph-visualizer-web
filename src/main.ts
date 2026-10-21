@@ -1,6 +1,6 @@
 import {BrowserCore} from './transport.ts';
 import {samples} from './samples.ts';
-import {startPanels, selectTab} from './panels.ts';
+import {startPanels, selectTab, flushStyles} from './panels.ts';
 
 const report = (error: unknown): void =>
 {
@@ -50,7 +50,7 @@ try
 
 		changing = true;
 		document.getElementById('error')!.textContent = '';
-		try {await operation();}
+		try {await flushStyles(); await operation();}
 		catch (error) {report(error);}
 		finally {changing = false;}
 	};

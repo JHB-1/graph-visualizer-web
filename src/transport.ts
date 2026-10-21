@@ -10,6 +10,7 @@ interface NativeReply
 export class BrowserCore implements GraphTransport
 {
 	readonly graphId = 'browser-session';
+	beforeExport?: () => Promise<void>;
 	private worker = new Worker(new URL('engine-worker.js', document.baseURI), {type: 'module'});
 	private sequence = 0;
 	private waiting = new Map<number, {resolve: (value: NativeReply) => void; reject: (error: Error) => void;
@@ -70,6 +71,7 @@ export class BrowserCore implements GraphTransport
 			{
 				this.events.push({delta: reply.delta, document_revision: String(reply.result.document_revision)});
 				if (this.events.length > 64) this.events.shift();
+				window.dispatchEvent(new Event('gv-core-update'));
 			}
 		}
 
@@ -107,6 +109,7 @@ export class BrowserCore implements GraphTransport
 		if (op === 'query' || op === 'status') return (await this.exchange({op, ...fields})).result;
 		if (op === 'export')
 		{
+			await this.beforeExport?.();
 			const reply = await this.exchange({op});
 			(reply.result.file as JsonObject).followHostTheme = false;
 			return reply.result;

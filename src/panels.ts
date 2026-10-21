@@ -181,20 +181,166 @@ function fields(parent: HTMLElement, data: Data, template: Data = {}, prefix = '
 	return (): Data => Object.fromEntries(readers.map(([key, read]): [string, unknown] => [key, read()]));
 }
 
+interface LiveInput
+{
+	scope: string;
+	apply(value: Data, key: string): Promise<void>;
+	finish(key: string): Promise<void>;
+}
+const liveForms = new WeakMap<HTMLElement, {scope: string; pending: () => boolean; dispose: () => void}>();
+const styleInputs = new Set<() => Promise<void>>();
+
+export async function flushStyles(): Promise<void>
+{
+	for (const flush of [...styleInputs]) await flush();
+}
+
+function liveInput(target: HTMLElement, read: () => Data, live: LiveInput, report: (error: unknown) => void): void
+{
+	let latest: {value: Data; key: string} | null = null;
+	let frame: number | undefined;
+	let pending = false;
+	let finishing = false;
+	let key = '';
+	let interaction = 0;
+	let close = false;
+	let disposed = false;
+	let error: unknown;
+	let flight: Promise<void> | undefined;
+	let accepted = JSON.stringify(read());
+	const pump = async (): Promise<void> =>
+	{
+		frame = undefined;
+		if (disposed || pending) return;
+
+		pending = true;
+		try
+		{
+			while (latest)
+			{
+				const next = latest;
+				latest = null;
+				const encoded = JSON.stringify(next.value);
+				if (encoded === accepted)
+				{
+					error = undefined;
+					byId('error').textContent = '';
+					continue;
+				}
+
+				key = next.key;
+				try
+				{
+					await live.apply(next.value, key);
+					accepted = encoded;
+					error = undefined;
+				}
+				catch (failure) {error = failure;}
+			}
+
+			if (close && key)
+			{
+				finishing = true;
+				await live.finish(key);
+				key = '';
+			}
+		}
+		catch (failure) {error = failure;}
+		finally
+		{
+			pending = false;
+			finishing = false;
+			if (latest) schedule();
+			else if (close)
+			{
+				if (error) report(error);
+				window.dispatchEvent(new Event('gv-form-idle'));
+			}
+		}
+	};
+	const schedule = (): void =>
+	{
+		if (!pending && frame === undefined) frame = requestAnimationFrame((): void => {flight = pump();});
+	};
+	const flush = async (): Promise<void> =>
+	{
+		close = true;
+		if (frame !== undefined) cancelAnimationFrame(frame);
+		frame = undefined;
+		if (pending && flight) await flight;
+		if (latest || key) await pump();
+	};
+	styleInputs.add(flush);
+	target.oninput = (event): void =>
+	{
+		const input = event.target;
+		if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLTextAreaElement)) return;
+
+		close = false;
+		try
+		{
+			for (const number of target.querySelectorAll<HTMLInputElement>('input[type="number"]:enabled'))
+				if (!number.value || !number.validity.valid) throw new Error('유효한 숫자를 입력하세요.');
+
+			latest = {value: read(), key: `${live.scope}:${input.dataset.field ?? input.dataset.inherit ?? 'text'}:${interaction}`};
+			error = undefined;
+			schedule();
+		}
+		catch (failure) {error = failure; latest = null;}
+	};
+	const focusOut = (): void =>
+	{
+		interaction += 1;
+		close = true;
+		schedule();
+	};
+	const focusIn = (): void =>
+	{
+		if (target instanceof HTMLTextAreaElement && !pending && !latest && !key) accepted = JSON.stringify(read());
+	};
+	target.addEventListener('focusout', focusOut);
+	target.addEventListener('focusin', focusIn);
+	const listener = (): void => {interaction += 1; close = true; schedule();};
+	window.addEventListener('blur', listener);
+	liveForms.set(target, {scope: live.scope, pending: (): boolean => pending || latest !== null || frame !== undefined || finishing,
+		dispose: (): void =>
+		{
+			disposed = true;
+			styleInputs.delete(flush);
+			if (frame !== undefined) cancelAnimationFrame(frame);
+			window.removeEventListener('blur', listener);
+			target.removeEventListener('focusout', focusOut);
+			target.removeEventListener('focusin', focusIn);
+		}});
+}
+
 function form(id: string, data: Data, submit: (value: Data) => Promise<void>, report: (error: unknown) => void,
-	template: Data = {}): void
+	template: Data = {}, live?: LiveInput): void
 {
 	const target = byId<HTMLFormElement>(id);
+	const previous = liveForms.get(target);
+	if (!live && target.childElementCount && target.contains(document.activeElement)) return;
+
+	if (live && previous?.scope === live.scope && (target.contains(document.activeElement) || previous.pending())) return;
+
+	previous?.dispose();
 	const open = new Set([...target.querySelectorAll('details[open]')].map((node): string => node.querySelector('summary')!.textContent!));
 	target.replaceChildren();
 	const read = fields(target, data, template);
 	for (const section of target.querySelectorAll('details')) section.open = open.has(section.querySelector('summary')!.textContent!);
-	const apply = document.createElement('button');
-	apply.textContent = '적용'; apply.type = 'submit'; apply.className = 'primary';
-	target.append(apply);
+	if (live) liveInput(target, read, live, report);
+	else
+	{
+		const apply = document.createElement('button');
+		apply.textContent = '적용'; apply.type = 'submit'; apply.className = 'primary';
+		target.append(apply);
+	}
+
 	target.onsubmit = (event): void =>
 	{
 		event.preventDefault();
+		if (live) return;
+
 		try {void submit(read()).catch(report);}
 		catch (error) {report(error);}
 	};
@@ -202,30 +348,42 @@ function form(id: string, data: Data, submit: (value: Data) => Promise<void>, re
 
 export async function startPanels(core: BrowserCore, report: (error: unknown) => void): Promise<void>
 {
+	core.beforeExport = flushStyles;
 	let state: State;
 	let revision = '';
 	let item: {kind: string; id: string} | null = null;
 	let busy = false;
+	let writes: Promise<unknown> = Promise.resolve();
 	let steps: {text: string}[] = [];
 	const readReply = (reply: {result: Data}): State => reply.result.web as State;
-	const run = async (action: string, value: Data = {}): Promise<State> =>
+	const run = (action: string, value: Data = {}): Promise<State> =>
 	{
-		if (busy) throw new Error('이전 작업을 마친 뒤 다시 시도하세요.');
+		const task = writes.then
+		(
+			async (): Promise<State> =>
+			{
+				busy = true;
+				byId('error').textContent = '';
+				try
+				{
+					const current = await core.exchange({op: 'status'});
+					const reply = await core.exchange({op: 'web_edit', expected_revision: current.result.document_revision, action, ...value});
+					state = readReply(reply);
+					revision = String(reply.result.document_revision);
+					render();
 
-		busy = true;
-		byId('error').textContent = '';
-		try
-		{
-			const current = await core.exchange({op: 'status'});
-			const reply = await core.exchange({op: 'web_edit', expected_revision: current.result.document_revision, action, ...value});
-			state = readReply(reply);
-			revision = String(reply.result.document_revision);
-			render();
+					return state;
+				}
+				finally {busy = false;}
+			}
+		);
+		writes = task.catch((): void => {});
 
-			return state;
-		}
-		finally {busy = false;}
+		return task;
 	};
+	const live = (scope: string, action: string, extra: Data = {}): LiveInput =>
+	({scope, apply: async (value, key): Promise<void> => {await run(action, {...extra, ...value, edit_key: key});},
+		finish: async (key): Promise<void> => {await run('end_style', {edit_key: key});}});
 	const refresh = async (): Promise<void> =>
 	{
 		const reply = await core.exchange({op: 'web_read'});
@@ -233,7 +391,10 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		revision = String(reply.result.document_revision);
 		render();
 	};
-	const safe = (task: () => Promise<unknown>): void => {void task().catch(report);};
+	const safe = (task: () => Promise<unknown>): void =>
+	{
+		void flushStyles().then(task).catch(report);
+	};
 	const fillNodes = (id: string, optional = false): void =>
 	{
 		const select = byId<HTMLSelectElement>(id);
@@ -272,15 +433,22 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		for (const id of ['expand', 'scope', 'ungroup']) byId<HTMLButtonElement>(id).disabled = !selectedObject?.subgraph;
 		byId<HTMLButtonElement>('reverse-edge').disabled = item?.kind !== 'edge';
 		byId<HTMLButtonElement>('reset-style').disabled = !item;
-		if (!item) byId('selection-form').replaceChildren();
+		if (!item)
+		{
+			byId('selection-form').replaceChildren();
+			byId('selection-style-form').replaceChildren();
+		}
 		if (item)
 		{
 			const current = item;
 			const source = (current.kind === 'node' ? state.nodes : state.edges).find((node): boolean => node.id === current.id)!;
-			const {id: ignored, ...editable} = source;
+			const {id: ignored, style: localStyle, shape, routing, profile, ...editable} = source;
 			const style = record(state.defaults[current.kind]);
 			const {shape: ignoredShape, routing: ignoredRouting, ...styleTemplate} = style;
 			const template = {style: styleTemplate};
+			const styleData = {profile, style: localStyle, [current.kind === 'node' ? 'shape' : 'routing']: shape ?? routing ?? null};
+			const styleLive = live(`style:${current.kind}:${current.id}`, 'selection_style', {id: current.id, kind: current.kind});
+			form('selection-style-form', styleData, async (): Promise<void> => {}, report, template, styleLive);
 			form('selection-form', editable, async (value): Promise<void> =>
 			{
 				if (current.kind === 'edge')
@@ -291,7 +459,7 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 
 				await core.update({[current.kind === 'node' ? 'updated_nodes' : 'updated_edges']: [{id: current.id, ...value}]});
 				await refresh();
-			}, report, template);
+			}, report);
 		}
 
 		form('theme-form', {node: state.defaults.node, edge: state.defaults.edge, nodeSize: state.defaults.nodeSize,
@@ -301,9 +469,18 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 			{
 				const {canvas, ...defaults} = value;
 				await run('settings', {defaults, canvas});
-			}, report);
+			}, report, {},
+			{
+				scope: 'defaults',
+				apply: async (value, key): Promise<void> =>
+				{
+					const {canvas, ...defaults} = value;
+					await run('settings', {defaults, canvas, edit_key: key});
+				},
+				finish: async (key): Promise<void> => {await run('end_style', {edit_key: key});}
+			});
 		if (document.activeElement !== byId('theme-text')) byId<HTMLTextAreaElement>('theme-text').value = state.theme_text;
-		form('font-form', state.fonts, async (value): Promise<void> => {await run('fonts', value);}, report);
+		form('font-form', state.fonts, async (value): Promise<void> => {await run('fonts', value);}, report, {}, live('fonts', 'fonts'));
 		const {obstacleAvoidance, gridSnap, gridSpacing, ...advanced} = state.options;
 		byId<HTMLInputElement>('avoid').checked = Boolean(obstacleAvoidance);
 		form('options-form', advanced, async (value): Promise<void> =>
@@ -313,6 +490,17 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		}, report);
 		byId<HTMLInputElement>('history-limit').value = String(state.undo_limit);
 	};
+	window.addEventListener('gv-form-idle', (): void => {render();});
+	for (const action of ['undo', 'redo'])
+		byId(action).onclick = (): void =>
+		{
+			safe(async (): Promise<void> =>
+			{
+				await window.gv!.sync();
+				await window.gv!.enqueue({action});
+				await refresh();
+			});
+		};
 
 	for (const tab of document.querySelectorAll<HTMLElement>('[data-tab]'))
 	{
@@ -391,7 +579,7 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 			[key, Number(byId<HTMLInputElement>(`region-${key}`).value)]));
 		safe(() => run('select_region', {region}));
 	};
-	byId('theme-apply').onclick = (): void => {safe(() => run('theme', {text: byId<HTMLTextAreaElement>('theme-text').value}));};
+	liveInput(byId('theme-text'), (): Data => ({text: byId<HTMLTextAreaElement>('theme-text').value}), live('profile-text', 'theme'), report);
 	byId('theme-export').onclick = (): void =>
 	{
 		safe(() => core.downloadFile('theme.gvtheme', new Blob([state.theme_text], {type: 'text/plain;charset=utf-8'})));

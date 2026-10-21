@@ -894,6 +894,8 @@ async function exportFile(kind: 'image' | 'graph'): Promise<void>
 	closeExportMenu();
 	if (stopped || !ready) return;
 	if (gesture || inputPending) throw new Error('편집을 마친 뒤 출력하세요.');
+	await window.graphTransport?.beforeExport?.();
+	await syncView('poll', {view_id: viewId});
 
 	const button = byId<HTMLButtonElement>('export-toggle');
 	button.disabled = true;
@@ -1049,8 +1051,10 @@ async function poll(): Promise<void>
 	schedulePoll(window.graphTransport ? 200 : 80);
 }
 const pulseTimer = setInterval(() => byId('pulse').classList.toggle('on', pulse.active), 60);
+window.addEventListener('gv-core-update', (): void => {if (ready && !stopped) schedulePoll(0);});
 const debug = {graphId, objects, metrics, interactionMetrics, api, enqueue, fit, zoomBy, Pulse, pulse,
 	inspect,
+	sync: async (): Promise<ViewState> => syncView('poll', {view_id: viewId}),
 	get revision() {return revision;}, get documentRevision() {return documentRevision;}, get camera() {return camera;},
 	get acknowledgedDocumentRevision() {return acknowledgedDocumentRevision;},
 	get ready() {return ready;}, get viewId() {return viewId;}, resync: snapshot, stop: stopRenderer};
