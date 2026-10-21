@@ -1,4 +1,4 @@
-:root
+:root, :root[data-theme="dark"]
 {
 	--gv-background: var(--workspace-background); --gv-node-fill: #ffffff; --gv-node-border: #9aa4b3;
 	--gv-node-text: var(--workspace-text); --gv-grid: #e3e6eb; --gv-selection: var(--workspace-accent);

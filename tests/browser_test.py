@@ -71,10 +71,14 @@ class BrowserTests(unittest.TestCase):
 			(selector => getComputedStyle(document.querySelector(selector)).fontFamily)''')
 		self.assertTrue(all('Pretendard Variable' in family for family in families), families)
 		self.assertTrue(any(url.endswith('/fonts/PretendardVariable.woff2') for url in self.requests))
+		self.assertEqual(self.page.locator('[role=tab][aria-selected=true]').evaluate
+			('(e) => getComputedStyle(e).color'), 'rgb(146, 173, 255)')
 		self.assertEqual(self.page.locator('.tab-rail').bounding_box()['width'], 56)
 		self.assertEqual(self.page.locator('.sidebar').bounding_box()['width'], 300)
 		document = self.page.evaluate("async () => (await graphTransport.request('export')).file.document")
 		self.page.locator('#theme').click()
+		self.page.wait_for_function('''() => getComputedStyle
+			(document.querySelector('[role=tab][aria-selected=true]')).color === 'rgb(82, 120, 220)' ''')
 		self.page.set_viewport_size({'width': 390, 'height': 844})
 		self.assertEqual(self.page.locator('.tab-rail').bounding_box()['width'], 48)
 		self.assertEqual(self.page.locator('.sidebar').bounding_box()['x'], 48)
