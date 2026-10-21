@@ -1,0 +1,19 @@
+{
+	"name": "graph-visualizer-web",
+	"version": "0.1.0",
+	"private": true,
+	"packageManager": "pnpm@11.25.0",
+	"type": "module",
+	"scripts": {
+		"build": "node scripts/build-site.mjs",
+		"build:wasm": "node scripts/build-wasm.mjs",
+		"verify": "node scripts/verify-public.mjs",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"esbuild": "0.28.2",
+		"typescript": "5.9.3",
+		"@types/node": "24.10.1"
+	},
+	"engines": { "node": ">=22" }
+}

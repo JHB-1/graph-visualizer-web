@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="브라우저에서 직접 조작하는 Graph Visualizer. 원본 C++ 코어의 배선, 그룹 편집과 증분 갱신을 체험하세요.">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+	<title>Graph Visualizer — 직접 다루는 그래프</title>
+	<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+	<link rel="stylesheet" href="./style.css">
+	<script type="module" src="./app.js"></script>
+</head>
+<body>
+	<a class="skip-link" href="#graph">그래프로 이동</a>
+	<nav class="site-nav" aria-label="사이트">
+		<a class="brand" href="./"><span class="brand-mark" aria-hidden="true">gv</span>Graph Visualizer<span class="tag">WEB</span></a>
+		<div><button id="theme" aria-label="밝은 테마와 어두운 테마 전환">테마 전환</button>
+			<a href="https://github.com/JHB-1/graph-visualizer-web" target="_blank" rel="noopener noreferrer">GitHub ↗</a></div>
+	</nav>
+	<div class="page">
+		<section class="intro" aria-labelledby="title">
+			<div><p class="eyebrow">AN INTERACTIVE GRAPH WORKSPACE</p><h1 id="title">그래프를 직접 다뤄보세요.</h1>
+				<p>노드를 옮기고, 연결을 바꾸고, 변화를 확인하세요. 원본 C++ 코어가 브라우저 안에서 실행됩니다.</p></div>
+			<span id="engine-state" role="status">코어 준비 중</span>
+		</section>
+		<section class="demo" aria-label="Graph Visualizer 체험판">
+			<div class="demo-bar">
+				<label>샘플 <select id="sample"><option value="workflow">01 워크플로</option>
+					<option value="routing">02 배선과 장애물</option><option value="stream">03 증분 갱신</option></select></label>
+				<span id="sample-description"></span>
+			</div>
+			<header class="toolbar">
+				<button id="fit">맞춤</button><button id="undo" aria-label="실행 취소">↶ 실행 취소</button>
+				<button id="redo" aria-label="다시 실행">↷ 다시 실행</button><span class="separator"></span>
+				<label>배선 <select id="routing"><option value="0">직선</option><option value="1">직각</option>
+					<option value="2">8방향</option><option value="3" selected>베지어</option></select></label>
+				<label><input id="avoid" type="checkbox" checked>장애물 회피</label>
+				<label><input id="snap" type="checkbox">격자 스냅</label>
+				<label>간격 <input id="spacing" type="number" min="0.001" step="any" value="25"></label>
+				<button id="details-toggle" aria-expanded="false" aria-controls="inspector">상세</button>
+				<div class="export-control">
+					<button id="export-toggle" aria-expanded="false" aria-controls="export-menu" disabled>파일 출력 ▾</button>
+					<div id="export-menu" hidden><button id="export-image">이미지 파일로 출력 (.png)</button>
+						<button id="export-graph">그래프 파일로 출력 (.json)</button></div>
+				</div>
+			</header>
+			<main id="workspace">
+				<output id="zoom-level" aria-label="줌 레벨">100%</output>
+				<div class="zoom-controls" aria-label="확대와 축소"><button id="zoom-out" data-engine disabled aria-label="축소">−</button>
+					<button id="zoom-in" data-engine disabled aria-label="확대">＋</button></div>
+				<svg id="graph" aria-label="편집 가능한 그래프" tabindex="0">
+					<defs><pattern id="grid" patternUnits="userSpaceOnUse" width="25" height="25">
+						<path id="grid-path" d="M 25 0 L 0 0 0 25" fill="none" stroke-width="1"
+							vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
+					</pattern></defs>
+					<rect id="grid-area" width="100%" height="100%" fill="url(#grid)" pointer-events="none"/>
+					<g id="camera"><g id="frames"></g><g id="edges"></g><g id="edge-labels"></g><g id="nodes"></g></g>
+				</svg>
+				<aside id="inspector" hidden><h2>선택 항목</h2><p>Shift: 다중 선택 · 빈 공간: 이동 · 휠: 확대</p>
+					<button id="expand">펼치기 / 접기</button><button id="scope">내부 보기</button><button id="scope-root">최상위</button>
+					<pre id="details">노드 또는 엣지를 선택하세요.</pre><h2>상태</h2><pre id="status"></pre></aside>
+			</main>
+			<div class="demo-actions"><button id="add-node" data-engine disabled>＋ 노드 추가</button>
+				<button id="update-data" data-engine disabled>데이터 갱신</button>
+				<span id="pulse" aria-label="데이터 갱신 활동">●</span><span id="connection">연결 중</span>
+				<span id="route-status" role="status"></span></div>
+			<p id="error" role="alert"></p>
+		</section>
+		<section class="guide" aria-label="사용 방법">
+			<div><span>01 / EDIT</span><h2>이동 · 크기 조절</h2><p>노드를 드래그하세요. 선택한 노드의 우하단 핸들로 크기를 바꿀 수 있습니다.</p></div>
+			<div><span>02 / EXPLORE</span><h2>그룹 · 배선</h2><p>그룹 오른쪽 위 버튼으로 접고 펼치세요. 배선과 장애물 회피는 코어가 계산합니다.</p></div>
+			<div><span>03 / UPDATE</span><h2>변경분 · 파일 출력</h2><p>데이터 갱신으로 같은 그래프를 수정하세요. 결과는 PNG 또는 JSON으로 내려받을 수 있습니다.</p></div>
+		</section>
+		<footer class="site-footer"><span>Graph Visualizer · C++20 + WebAssembly</span>
+			<span>데이터는 현재 브라우저 메모리에만 유지됩니다. 새로고침하면 초기화됩니다.</span></footer>
+	</div>
+</body>
+</html>

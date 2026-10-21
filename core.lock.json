@@ -1,0 +1,9 @@
+{
+	"repository": "JHB-1/graph-visualizer-core",
+	"commit": "206fca4494d0d61f8abda3400edd712524e1ef6b",
+	"emscripten": "emscripten/emsdk:4.0.23@sha256:86537645c51e44899812d29820ee3b64b96c321ebb2aba4416a04ceeb1bcde62",
+	"artifacts": {
+		"gv-core.mjs": "d77668e73233164151727b29864210af0983519031661b2f1581c6ce25907cd0",
+		"gv-core.wasm": "f39016a78e450140ee7f76a412fa99b5e604463925085a61f6cca8b0fa7071cb"
+	}
+}
