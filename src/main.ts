@@ -1,5 +1,6 @@
 import {BrowserCore} from './transport.ts';
 import {samples} from './samples.ts';
+import {startPanels, selectTab} from './panels.ts';
 
 const report = (error: unknown): void =>
 {
@@ -18,7 +19,7 @@ selection.onchange = (): void =>
 	location.assign(url);
 };
 document.documentElement.dataset.theme = localStorage.getItem('gv-theme') ??
-	(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+	'dark';
 document.getElementById('theme')!.onclick = (): void =>
 {
 	const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -33,6 +34,7 @@ try
 	window.graphTransport = core;
 	await import('./renderer/app.ts');
 	if (!window.gv?.ready) throw new Error('렌더러를 시작하지 못했습니다.');
+	await startPanels(core, report);
 
 	document.getElementById('engine-state')!.textContent = 'C++ 코어 · 브라우저 실행';
 	document.getElementById('engine-state')!.classList.add('ready');
@@ -70,10 +72,18 @@ try
 	{
 		void action(async (): Promise<void> =>
 		{
+			const current = await core.exchange({op: 'web_read'});
+			const state = current.result.web as {defaults: {nodeSize: {width: number; height: number}};
+				nodes: {id: string}[]; edges: {id: string}[]};
+			const ids = new Set([...state.nodes, ...state.edges].map((item): string => item.id));
+			while (ids.has(String(nextID))) nextID += 1n;
+
 			const id = String(nextID++);
-			await core.update({added_nodes: [{id, label: `노드 ${id}`, shape: 1,
+			const defaults = state.defaults;
+			await core.update({added_nodes: [{id, label: `노드 ${id}`, shape: null, size: defaults.nodeSize,
 				center: {x: (Number(nextID % 4n) - 2) * 200, y: 240 + Number(nextID % 2n) * 110}}],
-				added_edges: [{id, source: '2', target: id, label: '추가', routing: 3}]});
+				added_edges: state.nodes.some((node): boolean => node.id === '2')
+					? [{id, source: '2', target: id, label: '추가', routing: null}] : []});
 		});
 	};
 	(document.getElementById('routing') as HTMLSelectElement).onchange = (event): void =>
@@ -91,6 +101,10 @@ try
 		void window.gv!.enqueue({action: 'options', options: {obstacleAvoidance: (event.target as HTMLInputElement).checked}}).catch(report);
 	};
 	window.addEventListener('resize', (): void => {window.gv?.fit();});
+	window.addEventListener('keydown', (event): void =>
+	{
+		if (event.key === 'Escape') selectTab(null);
+	});
 }
 catch (error)
 {

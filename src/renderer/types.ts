@@ -64,6 +64,7 @@ export interface EdgeVisual
 	engaged: boolean;
 	selected: boolean;
 	active: boolean;
+	highlighted: boolean;
 }
 export interface Context
 {

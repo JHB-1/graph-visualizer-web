@@ -241,7 +241,7 @@ function updateNode(layer: 'nodes' | 'frames', visual: NodeVisual): void
 	text.textContent = node.label;
 	font(text, style, nodeColor(visual, 'textColor'));
 	const decorated = visual.engaged || visual.selected || visual.active || visual.highlighted;
-	const decoration = canvasColor(visual.engaged || visual.selected ? 'selection' : 'connectionTarget');
+	const decoration = canvasColor(visual.engaged || visual.selected ? 'selection' : visual.active ? 'connectionTarget' : 'highlight');
 	attrs(outline, {
 		x: x - w / 2 - 3, y: y - h / 2 - 3, width: w + 6, height: h + 6,
 		stroke: decoration, 'stroke-width': 2, display: decorated ? 'inline' : 'none'
@@ -322,7 +322,7 @@ function drawEdge(entry: EdgeEntry, visual: EdgeVisual): void
 	const route = pathData(visual);
 	const routed = route !== '';
 	const stroke = visual.engaged || visual.selected ? context.canvas.selection
-		: visual.active ? context.canvas.connectionTarget : style.color;
+		: visual.active ? context.canvas.connectionTarget : visual.highlighted ? context.canvas.highlight : style.color;
 	attrs(path, {d: route, stroke: color(stroke), 'stroke-width': style.width});
 	attrs(arrow, {points: routed ? visual.arrow.map((point) => `${point.x},${point.y}`).join(' ') : '', fill: color(stroke)});
 	attrs(text, {x: visual.labelAnchor.x, y: visual.labelAnchor.y, display: routed ? 'inline' : 'none'});
@@ -488,6 +488,7 @@ async function inspect(id: string, kind: string): Promise<void>
 		visible_source: visual.source, visible_target: visual.target,
 		actual_source: visual.actualSource, actual_target: visual.actualTarget} : selected.value;
 	byId('details').textContent = JSON.stringify(details, null, 2);
+	window.dispatchEvent(new CustomEvent('gv-selection', {detail: {id, kind}}));
 }
 
 let movePending = false;
@@ -846,12 +847,6 @@ svg.addEventListener('keydown', (event: KeyboardEvent): void => {
 	const id = (event.target as Element).closest('.disclosure')?.closest<SVGGElement>('.visual')?.dataset.id;
 	if (id) {event.preventDefault(); toggleSubgraph(id);}
 });
-byId('details-toggle').onclick = (): void => {
-	const hidden = byId('inspector').toggleAttribute('hidden');
-	byId('details-toggle').setAttribute('aria-expanded', String(!hidden));
-	byId('workspace').classList.toggle('details-open', !hidden);
-	if (!hidden && selected) void inspect(selected.id, selected.kind).catch(errorMessage);
-};
 function setOptions(): void
 {
 	const spacing = Number(byId<HTMLInputElement>('spacing').value);
@@ -1055,6 +1050,7 @@ async function poll(): Promise<void>
 }
 const pulseTimer = setInterval(() => byId('pulse').classList.toggle('on', pulse.active), 60);
 const debug = {graphId, objects, metrics, interactionMetrics, api, enqueue, fit, zoomBy, Pulse, pulse,
+	inspect,
 	get revision() {return revision;}, get documentRevision() {return documentRevision;}, get camera() {return camera;},
 	get acknowledgedDocumentRevision() {return acknowledgedDocumentRevision;},
 	get ready() {return ready;}, get viewId() {return viewId;}, resync: snapshot, stop: stopRenderer};

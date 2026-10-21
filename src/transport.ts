@@ -65,7 +65,7 @@ export class BrowserCore implements GraphTransport
 		);
 		if (reply.delta)
 		{
-			reply.delta.context.follow_host_theme = true;
+			reply.delta.context.follow_host_theme = false;
 			if (reply.delta.revision !== reply.delta.previous_revision)
 			{
 				this.events.push({delta: reply.delta, document_revision: String(reply.result.document_revision)});
@@ -93,7 +93,7 @@ export class BrowserCore implements GraphTransport
 			const reply = await this.exchange({op});
 			if (!reply.snapshot) throw new Error('초기 그래프가 없습니다.');
 
-			reply.snapshot.follow_host_theme = true;
+			reply.snapshot.follow_host_theme = false;
 			return {...reply.result, scene: reply.snapshot};
 		}
 
@@ -108,7 +108,7 @@ export class BrowserCore implements GraphTransport
 		if (op === 'export')
 		{
 			const reply = await this.exchange({op});
-			(reply.result.file as JsonObject).followHostTheme = true;
+			(reply.result.file as JsonObject).followHostTheme = false;
 			return reply.result;
 		}
 

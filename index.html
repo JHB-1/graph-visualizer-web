@@ -1,78 +1,104 @@
 <!doctype html>
 <html lang="ko">
 <head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="브라우저에서 직접 조작하는 Graph Visualizer. 원본 C++ 코어의 배선, 그룹 편집과 증분 갱신을 체험하세요.">
+	<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="C++ 코어로 동작하는 전체 화면 그래프 편집기">
 	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
-	<title>Graph Visualizer — 직접 다루는 그래프</title>
-	<link rel="icon" href="./favicon.svg" type="image/svg+xml">
-	<link rel="stylesheet" href="./style.css">
-	<script type="module" src="./app.js"></script>
+	<title>Graph Visualizer</title><link rel="icon" href="./favicon.svg" type="image/svg+xml">
+	<link rel="stylesheet" href="./style.css"><script type="module" src="./app.js"></script>
 </head>
 <body>
 	<a class="skip-link" href="#graph">그래프로 이동</a>
-	<nav class="site-nav" aria-label="사이트">
-		<a class="brand" href="./"><span class="brand-mark" aria-hidden="true">gv</span>Graph Visualizer<span class="tag">WEB</span></a>
-		<div><button id="theme" aria-label="밝은 테마와 어두운 테마 전환">테마 전환</button>
-			<a href="https://github.com/JHB-1/graph-visualizer-web" target="_blank" rel="noopener noreferrer">GitHub ↗</a></div>
-	</nav>
-	<div class="page">
-		<section class="intro" aria-labelledby="title">
-			<div><p class="eyebrow">AN INTERACTIVE GRAPH WORKSPACE</p><h1 id="title">그래프를 직접 다뤄보세요.</h1>
-				<p>노드를 옮기고, 연결을 바꾸고, 변화를 확인하세요. 원본 C++ 코어가 브라우저 안에서 실행됩니다.</p></div>
-			<span id="engine-state" role="status">코어 준비 중</span>
-		</section>
-		<section class="demo" aria-label="Graph Visualizer 체험판">
-			<div class="demo-bar">
-				<label>샘플 <select id="sample"><option value="workflow">01 워크플로</option>
-					<option value="routing">02 배선과 장애물</option><option value="stream">03 증분 갱신</option></select></label>
-				<span id="sample-description"></span>
+	<div class="app-shell">
+		<nav class="tab-rail" aria-label="작업 도구">
+			<a class="brand-mark" href="./" aria-label="Graph Visualizer">gv</a>
+			<div role="tablist" aria-label="설정 패널" aria-orientation="vertical">
+				<button role="tab" id="tab-edit" aria-controls="panel-edit" aria-selected="true" data-tab="edit"><span>⌘</span>편집</button>
+				<button role="tab" id="tab-theme" aria-controls="panel-theme" aria-selected="false" data-tab="theme" tabindex="-1"><span>◐</span>테마</button>
+				<button role="tab" id="tab-routing" aria-controls="panel-routing" aria-selected="false" data-tab="routing" tabindex="-1"><span>⌁</span>배선</button>
+				<button role="tab" id="tab-analysis" aria-controls="panel-analysis" aria-selected="false" data-tab="analysis" tabindex="-1"><span>⋈</span>분석</button>
+				<button role="tab" id="tab-file" aria-controls="panel-file" aria-selected="false" data-tab="file" tabindex="-1"><span>▤</span>파일</button>
 			</div>
-			<header class="toolbar">
-				<button id="fit">맞춤</button><button id="undo" aria-label="실행 취소">↶ 실행 취소</button>
-				<button id="redo" aria-label="다시 실행">↷ 다시 실행</button><span class="separator"></span>
-				<label>배선 <select id="routing"><option value="0">직선</option><option value="1">직각</option>
-					<option value="2">8방향</option><option value="3" selected>베지어</option></select></label>
-				<label><input id="avoid" type="checkbox" checked>장애물 회피</label>
-				<label><input id="snap" type="checkbox">격자 스냅</label>
-				<label>간격 <input id="spacing" type="number" min="0.001" step="any" value="25"></label>
-				<button id="details-toggle" aria-expanded="false" aria-controls="inspector">상세</button>
-				<div class="export-control">
-					<button id="export-toggle" aria-expanded="false" aria-controls="export-menu" disabled>파일 출력 ▾</button>
-					<div id="export-menu" hidden><button id="export-image">이미지 파일로 출력 (.png)</button>
-						<button id="export-graph">그래프 파일로 출력 (.json)</button></div>
-				</div>
-			</header>
-			<main id="workspace">
-				<output id="zoom-level" aria-label="줌 레벨">100%</output>
-				<div class="zoom-controls" aria-label="확대와 축소"><button id="zoom-out" data-engine disabled aria-label="축소">−</button>
-					<button id="zoom-in" data-engine disabled aria-label="확대">＋</button></div>
-				<svg id="graph" aria-label="편집 가능한 그래프" tabindex="0">
-					<defs><pattern id="grid" patternUnits="userSpaceOnUse" width="25" height="25">
-						<path id="grid-path" d="M 25 0 L 0 0 0 25" fill="none" stroke-width="1"
-							vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/>
-					</pattern></defs>
-					<rect id="grid-area" width="100%" height="100%" fill="url(#grid)" pointer-events="none"/>
-					<g id="camera"><g id="frames"></g><g id="edges"></g><g id="edge-labels"></g><g id="nodes"></g></g>
-				</svg>
-				<aside id="inspector" hidden><h2>선택 항목</h2><p>Shift: 다중 선택 · 빈 공간: 이동 · 휠: 확대</p>
-					<button id="expand">펼치기 / 접기</button><button id="scope">내부 보기</button><button id="scope-root">최상위</button>
-					<pre id="details">노드 또는 엣지를 선택하세요.</pre><h2>상태</h2><pre id="status"></pre></aside>
-			</main>
-			<div class="demo-actions"><button id="add-node" data-engine disabled>＋ 노드 추가</button>
-				<button id="update-data" data-engine disabled>데이터 갱신</button>
-				<span id="pulse" aria-label="데이터 갱신 활동">●</span><span id="connection">연결 중</span>
-				<span id="route-status" role="status"></span></div>
-			<p id="error" role="alert"></p>
-		</section>
-		<section class="guide" aria-label="사용 방법">
-			<div><span>01 / EDIT</span><h2>이동 · 크기 조절</h2><p>노드를 드래그하세요. 선택한 노드의 우하단 핸들로 크기를 바꿀 수 있습니다.</p></div>
-			<div><span>02 / EXPLORE</span><h2>그룹 · 배선</h2><p>그룹 오른쪽 위 버튼으로 접고 펼치세요. 배선과 장애물 회피는 코어가 계산합니다.</p></div>
-			<div><span>03 / UPDATE</span><h2>변경분 · 파일 출력</h2><p>데이터 갱신으로 같은 그래프를 수정하세요. 결과는 PNG 또는 JSON으로 내려받을 수 있습니다.</p></div>
-		</section>
-		<footer class="site-footer"><span>Graph Visualizer · C++20 + WebAssembly</span>
-			<span>데이터는 현재 브라우저 메모리에만 유지됩니다. 새로고침하면 초기화됩니다.</span></footer>
+			<button id="theme" class="rail-bottom" aria-label="밝은 테마와 어두운 테마 전환"><span>☼</span>화면</button>
+			<a class="repo-link" href="https://github.com/JHB-1/graph-visualizer-web" target="_blank" rel="noopener noreferrer" aria-label="GitHub 저장소">↗</a>
+		</nav>
+		<aside class="sidebar" id="sidebar" aria-label="그래프 설정">
+			<div class="sidebar-heading"><div><strong>Graph Visualizer</strong><span>WORKSPACE</span></div><button id="sidebar-close" aria-label="사이드바 접기">‹</button></div>
+			<div class="sidebar-body">
+				<section id="panel-edit" role="tabpanel" aria-labelledby="tab-edit">
+					<h1>편집</h1><p class="panel-description">선택하고, 연결하고, 다듬으세요.</p>
+					<div class="button-row"><button id="undo" aria-label="실행 취소">↶ 취소</button><button id="redo" aria-label="다시 실행">↷ 다시 실행</button></div>
+					<section class="control-section"><h2>노드와 연결</h2>
+						<div class="button-row"><button id="add-node" data-engine disabled>＋ 노드</button><button id="update-data" data-engine disabled>데이터 갱신</button></div>
+						<div class="button-row"><button data-command="select_all">전체 선택</button><button data-command="clear_selection">선택 해제</button></div>
+						<div class="button-grid"><button data-command="copy">복사</button><button data-command="paste">붙여넣기</button><button data-command="duplicate">복제</button><button data-command="delete" class="danger">삭제</button></div>
+						<div class="button-row"><button data-command="group">그룹 만들기</button><button id="ungroup">그룹 해제</button></div>
+						<details><summary>좌표 영역 선택</summary><form id="region-form" class="field-list">
+							<label>X<input id="region-x" type="number" value="-500" step="any"></label><label>Y<input id="region-y" type="number" value="-200" step="any"></label>
+							<label>너비<input id="region-width" type="number" value="1000" min="0" step="any"></label><label>높이<input id="region-height" type="number" value="400" min="0" step="any"></label>
+							<button type="submit">영역 선택</button></form></details>
+						<details><summary>연결 추가</summary><form id="connect-form" class="field-list">
+							<label>시작 노드<select id="connect-source"></select></label><label>도착 노드<select id="connect-target"></select></label>
+							<label>방향<select id="connect-direction"><option value="1">유향 →</option><option value="0">무향 —</option></select></label>
+							<label>라벨<input id="connect-label" type="text" maxlength="500"></label><button type="submit" class="primary">연결</button></form></details>
+					</section>
+					<section class="control-section"><h2>선택 속성 <span id="selection-count">0</span></h2>
+						<label class="full-field">항목<select id="object-picker"><option value="">선택 없음</option></select></label>
+						<div id="inspector"><div class="button-row"><button id="expand">접기/펼침</button><button id="scope">내부 보기</button><button id="scope-root">최상위</button></div>
+							<form id="selection-form" class="field-list"></form><div class="button-row"><button id="reset-style">스타일 상속 복구</button><button id="reverse-edge">방향 뒤집기</button></div>
+							<details><summary>원본 데이터</summary><pre id="details">노드 또는 엣지를 선택하세요.</pre></details></div>
+					</section>
+					<p class="hint">드래그 이동 · Shift 다중 선택 · 우하단 핸들 크기 조절<br>빈 공간 드래그 이동 · 휠 확대/축소</p>
+				</section>
+				<section id="panel-theme" role="tabpanel" aria-labelledby="tab-theme" hidden>
+					<h1>테마</h1><p class="panel-description">그래프 문서에 저장되는 기본 스타일입니다.</p>
+					<div class="button-row"><button id="preset-dark">다크</button><button id="preset-light">라이트</button><button id="preset-core">코어 기본</button></div>
+					<form id="theme-form" class="field-list"></form>
+					<section class="control-section"><h2>문서 폰트</h2><form id="font-form" class="field-list"></form>
+						<p class="hint">브라우저에 설치된 글꼴을 사용합니다. 누락 정책은 문서에 저장되며 OS 글꼴 설치 대화상자는 표시하지 않습니다.</p></section>
+					<section class="control-section"><h2>테마 프로파일</h2><p class="hint">명명 스타일, 투명도, 상속 값을 포함한 코어 형식</p>
+						<textarea id="theme-text" spellcheck="false" aria-label="테마 프로파일 텍스트" rows="8"></textarea>
+						<div class="button-row"><button id="theme-apply">텍스트 적용</button><button id="theme-export">.gvtheme 저장</button></div>
+						<label class="file-button">테마 파일 열기<input id="theme-import" type="file" accept=".gvtheme,text/plain" hidden></label>
+					</section>
+				</section>
+				<section id="panel-routing" role="tabpanel" aria-labelledby="tab-routing" hidden>
+					<h1>배선과 격자</h1><p class="panel-description">월드 좌표 기준 간격과 경로 설정</p>
+					<section class="control-section"><h2>전체 엣지 배선</h2><label class="full-field">방식<select id="routing"><option value="0">직선</option><option value="1">직각</option><option value="2">8방향</option><option value="3" selected>베지어</option></select></label>
+						<label class="check-field"><input id="avoid" type="checkbox" checked>장애물 회피</label><label class="check-field"><input id="snap" type="checkbox">격자 스냅</label>
+						<label class="full-field">격자 간격<input id="spacing" type="number" min="0.001" step="any" value="25"></label><label class="check-field"><input id="show-grid" type="checkbox" checked>격자 표시</label></section>
+					<form id="options-form" class="field-list"></form>
+					<section class="control-section"><h2>이력</h2><form id="history-form" class="field-list"><label>최대 Undo 수<input id="history-limit" type="number" min="0" max="10000" value="100"></label><button type="submit">설정</button></form></section>
+				</section>
+				<section id="panel-analysis" role="tabpanel" aria-labelledby="tab-analysis" hidden>
+					<h1>그래프 분석</h1><p class="panel-description">코어 알고리즘과 단계별 강조</p>
+					<form id="algorithm-form" class="field-list"><label>알고리즘<select id="algorithm-kind"><option value="0">너비 우선 탐색 (BFS)</option><option value="1">깊이 우선 탐색 (DFS)</option><option value="2">최단 경로</option><option value="3">연결 성분</option><option value="4">사이클</option></select></label>
+						<label>시작 노드<select id="algorithm-start"></select></label><label>도착 노드<select id="algorithm-target"></select></label><button type="submit" class="primary">실행</button></form>
+					<p id="algorithm-result" role="status">분석을 실행하세요.</p><label class="full-field">재생 단계<input id="algorithm-step" type="range" min="0" max="0" value="0" disabled></label>
+					<p id="algorithm-description" class="hint"></p><button data-command="algorithm_clear">강조 지우기</button>
+					<section class="control-section"><h2>실행 상태</h2><pre id="status"></pre><span id="route-status" role="status"></span></section>
+				</section>
+				<section id="panel-file" role="tabpanel" aria-labelledby="tab-file" hidden>
+					<h1>파일과 데이터</h1><p class="panel-description">데이터는 브라우저 메모리에서만 처리됩니다.</p>
+					<label class="full-field">샘플<select id="sample"><option value="workflow">워크플로</option><option value="routing">배선과 장애물</option><option value="stream">증분 갱신</option></select></label><p id="sample-description" class="hint"></p>
+					<div class="export-control"><button id="export-toggle" aria-expanded="false" aria-controls="export-menu" disabled>파일 출력 ▾</button>
+						<div id="export-menu" hidden><button id="export-image">이미지 파일로 출력 (.png)</button><button id="export-graph">그래프 파일로 출력 (.json)</button></div></div>
+					<section class="control-section"><h2>증분 데이터</h2><p class="hint">노드·엣지 ID별 추가, 수정, 삭제. 전체 그래프를 재생성하지 않습니다.</p>
+						<textarea id="batch-text" rows="10" spellcheck="false" aria-label="증분 배치 JSON">{
+	"updated_nodes": [{"id": "2", "label": "새 데이터"}]
+}</textarea><button id="batch-apply" class="primary">변경분 적용</button></section>
+					<section class="control-section"><h2>브라우저 실행</h2><p class="hint">파일 출력은 다운로드로 처리합니다. TCP 소켓, OS 폰트 설치와 원격 프로세스 수집은 웹에서 제공하지 않습니다.</p></section>
+				</section>
+			</div>
+			<div class="sidebar-status"><span id="pulse" aria-label="데이터 갱신 활동">●</span><span id="engine-state" role="status">코어 준비 중</span><span id="connection" hidden></span></div>
+		</aside>
+		<main id="workspace" aria-label="그래프 작업 공간">
+			<div class="canvas-controls"><button id="sidebar-open" aria-label="사이드바 펼치기" aria-controls="sidebar" aria-expanded="true">☰</button>
+				<output id="zoom-level" aria-label="줌 레벨">100%</output><button id="zoom-out" data-engine disabled aria-label="축소">−</button><button id="zoom-in" data-engine disabled aria-label="확대">＋</button><button id="fit">화면 맞춤</button></div>
+			<svg id="graph" aria-label="편집 가능한 그래프" tabindex="0"><defs><pattern id="grid" patternUnits="userSpaceOnUse" width="25" height="25"><path id="grid-path" d="M 25 0 L 0 0 0 25" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/></pattern></defs>
+				<rect id="grid-area" width="100%" height="100%" fill="url(#grid)" pointer-events="none"/><g id="camera"><g id="frames"></g><g id="edges"></g><g id="edge-labels"></g><g id="nodes"></g></g></svg>
+			<div class="canvas-caption">Graph Visualizer <span>·</span> WebAssembly</div><p id="error" role="alert"></p>
+		</main>
 	</div>
 </body>
 </html>
