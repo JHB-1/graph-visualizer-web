@@ -4,6 +4,7 @@ import type {
 } from './types.ts';
 import {previewEdge} from './preview.ts';
 import {download, pngImage} from './export.ts';
+import {defaultFontFamily} from './font.ts';
 export {imageSVG} from './export.ts';
 
 type Attributes = Record<string, string | number | boolean>;
@@ -160,7 +161,8 @@ function color(value: Color): string
 function font(text: Element, style: FontStyle, fill: Color | string): void
 {
 	attrs(text, {
-		fill: typeof fill === 'string' ? fill : color(fill), 'font-family': style.fontFamily || context.fallbackFontFamily || 'sans-serif',
+		fill: typeof fill === 'string' ? fill : color(fill),
+		'font-family': style.fontFamily || context.fallbackFontFamily || defaultFontFamily,
 		'font-size': style.fontSize, 'font-weight': style.fontBold ? 'bold' : 'normal',
 		'font-style': style.fontItalic ? 'italic' : 'normal',
 		'text-decoration': [style.fontUnderline ? 'underline' : '', style.fontStrikeOut ? 'line-through' : ''].join(' ')

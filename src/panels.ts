@@ -514,10 +514,12 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		{
 			const tabs = [...document.querySelectorAll<HTMLElement>('[data-tab]')];
 			const direction = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
-			if (!direction) return;
+			if (!direction && event.key !== 'Home' && event.key !== 'End') return;
 
 			event.preventDefault();
-			const next = tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
+			const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
+				(tabs.indexOf(tab) + direction + tabs.length) % tabs.length;
+			const next = tabs[index];
 			selectTab(next.dataset.tab!); next.focus();
 		};
 	}

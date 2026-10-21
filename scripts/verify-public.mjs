@@ -17,7 +17,7 @@ for (const name of files.stdout.split('\0').filter(Boolean))
 		throw new Error(`Private/build material cannot be published: ${name}`);
 	if (/\.(cpp|hpp|h)$/.test(name) && name !== 'native/wasm-api.cpp')
 		throw new Error(`Core source or header cannot be published: ${name}`);
-	if (!name.endsWith('.wasm'))
+	if (!/\.(wasm|woff2)$/.test(name))
 	{
 		const text = await readFile(path.join(root, name), 'utf8');
 		if (/(github_pat_[A-Za-z0-9_]{15,}|gh[pousr]_[A-Za-z0-9]{25,}|[A-Za-z]:[\\/]Users[\\/]|\/home\/[A-Za-z0-9_-]+\/)/.test(text))
@@ -35,7 +35,12 @@ async function inspect(directory, relative = '')
 		if (file.isDirectory()) await inspect(path.join(directory, file.name), name + '/');
 		else
 		{
-			if (!/^(index\.html|style\.css|app\.js|engine-worker\.js|build\.json|favicon\.svg|\.nojekyll|licenses\/.+|wasm\/gv-core\.(mjs|wasm))$/.test(name))
+			const allowedAsset = new RegExp
+			(
+				'^(index\\.html|style\\.css|app\\.js|engine-worker\\.js|build\\.json|favicon\\.svg|\\.nojekyll|' +
+				'licenses/.+|wasm/gv-core\\.(mjs|wasm)|fonts/PretendardVariable\\.woff2)$'
+			);
+			if (!allowedAsset.test(name))
 				throw new Error(`Unexpected deploy asset: ${name}`);
 			const content = await readFile(path.join(directory, file.name));
 			assets.push({name, bytes: content.length, sha256: createHash('sha256').update(content).digest('hex')});
@@ -43,6 +48,13 @@ async function inspect(directory, relative = '')
 	}
 }
 await inspect(path.join(root, 'dist'));
+for (const directory of ['public', 'dist'])
+{
+	const font = await readFile(path.join(root, directory, 'fonts/PretendardVariable.woff2'));
+	if (font.subarray(0, 4).toString('ascii') !== 'wOF2' ||
+		createHash('sha256').update(font).digest('hex') !== '9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4')
+		throw new Error('Pinned Pretendard asset has changed.');
+}
 const wasm = await readFile(path.join(root, 'dist/wasm/gv-core.wasm'));
 if (!wasm.subarray(0, 4).equals(Buffer.from([0, 97, 115, 109]))) throw new Error('Missing real WebAssembly binary.');
 

@@ -65,6 +65,77 @@ class BrowserTests(unittest.TestCase):
 		self.assertEqual(self.page.evaluate('gv.objects.frames.size'), 1)
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
 
+	def test_shared_shell_and_pretendard_font(self):
+		self.assertTrue(self.page.evaluate('document.fonts.check(\'400 14px "Pretendard Variable"\', "그래프 Graph")'))
+		families = self.page.evaluate('''() => ['body', '#tab-edit', '#nodes text'].map
+			(selector => getComputedStyle(document.querySelector(selector)).fontFamily)''')
+		self.assertTrue(all('Pretendard Variable' in family for family in families), families)
+		self.assertTrue(any(url.endswith('/fonts/PretendardVariable.woff2') for url in self.requests))
+		self.assertEqual(self.page.locator('.tab-rail').bounding_box()['width'], 56)
+		self.assertEqual(self.page.locator('.sidebar').bounding_box()['width'], 300)
+		document = self.page.evaluate("async () => (await graphTransport.request('export')).file.document")
+		self.page.locator('#theme').click()
+		self.page.set_viewport_size({'width': 390, 'height': 844})
+		self.assertEqual(self.page.locator('.tab-rail').bounding_box()['width'], 48)
+		self.assertEqual(self.page.locator('.sidebar').bounding_box()['x'], 48)
+		self.assertEqual(self.page.locator('#graph').bounding_box()['width'], 342)
+		self.assertEqual(self.page.evaluate("async () => (await graphTransport.request('export')).file.document"), document)
+		self.page.set_viewport_size({'width': 1440, 'height': 1050})
+		self.page.locator('#tab-theme').click()
+		self.page.locator('#theme-form').get_by_text('노드', exact=True).click()
+		self.page.locator('#theme-form [data-field="node.fontFamily"]').fill('Consolas')
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.style.fontFamily === 'Consolas'")
+		self.assertEqual(self.page.locator('#nodes [data-id="0"] text').get_attribute('font-family'), 'Consolas')
+
+	def test_png_embeds_and_renders_pretendard(self):
+		self.page.evaluate('''() =>
+		{
+			const original = URL.createObjectURL;
+			URL.createObjectURL = function(blob)
+			{
+				if (blob.type.startsWith('image/svg+xml')) window.exportSVG = blob;
+				return original.call(this, blob);
+			};
+		}''')
+		self.page.locator('#tab-file').click()
+		self.page.locator('#export-toggle').click()
+		with self.page.expect_download() as exported:
+			self.page.locator('#export-image').click()
+
+		self.assertEqual(exported.value.path().read_bytes()[:8], b'\x89PNG\r\n\x1a\n')
+		result = self.page.evaluate('''async () =>
+		{
+			const source = await window.exportSVG.text();
+			const xml = new DOMParser().parseFromString(source, 'image/svg+xml');
+			const font = xml.querySelector('style');
+			const embedded = font.textContent.includes('base64,') && font.textContent.includes('Pretendard Variable');
+			font.remove();
+			async function pixels(text)
+			{
+				const url = URL.createObjectURL(new Blob([text], {type:'image/svg+xml'}));
+				try
+				{
+					const image = new Image();
+					image.src = url;
+					await image.decode();
+					const canvas = document.createElement('canvas');
+					canvas.width = image.width; canvas.height = image.height;
+					const context = canvas.getContext('2d');
+					context.drawImage(image, 0, 0);
+					return context.getImageData(0, 0, canvas.width, canvas.height).data;
+				}
+				finally {URL.revokeObjectURL(url);}
+			}
+			const [withFont, withoutFont] = await Promise.all
+			([pixels(source), pixels(new XMLSerializer().serializeToString(xml))]);
+			let changed = 0;
+			for (let index = 0; index < withFont.length; index++)
+				if (withFont[index] !== withoutFont[index]) changed++;
+			return {embedded, changed};
+		}''')
+		self.assertTrue(result['embedded'])
+		self.assertGreater(result['changed'], 100)
+
 	def test_drag_resize_pan_and_zoom(self):
 		self.page.evaluate("window.before = {...gv.objects.nodes.get('0').visual.node.center}")
 		box = self.page.locator('#nodes [data-id="0"] .shape').bounding_box()
@@ -182,6 +253,10 @@ class BrowserTests(unittest.TestCase):
 		self.page.locator('#tab-edit').focus()
 		self.page.keyboard.press('ArrowDown')
 		self.assertEqual(self.page.locator('#tab-theme').get_attribute('aria-selected'), 'true')
+		self.page.keyboard.press('End')
+		self.assertEqual(self.page.locator('#tab-file').get_attribute('aria-selected'), 'true')
+		self.page.keyboard.press('Home')
+		self.assertEqual(self.page.locator('#tab-edit').get_attribute('aria-selected'), 'true')
 
 	def test_core_theme_rgba_history_and_codec(self):
 		original = self.state()['theme_text']

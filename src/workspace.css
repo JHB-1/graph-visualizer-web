@@ -1,0 +1,44 @@
+/* GV/FGV 웹 렌더러 공통 셸, 코어 문서 스타일과 분리 */
+@font-face
+{
+	font-family: "Pretendard Variable";
+	src: url("./fonts/PretendardVariable.woff2") format("woff2");
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+}
+:root
+{
+	--workspace-font: "Pretendard Variable", Pretendard, system-ui, sans-serif;
+	--workspace-rail-width: 56px;
+	--workspace-panel-width: 300px;
+	--workspace-control-height: 30px;
+	--workspace-control-radius: 5px;
+	--workspace-header-height: 69px;
+	--workspace-status-height: 36px;
+	--workspace-background: #f5f6f8;
+	--workspace-panel: #ffffff;
+	--workspace-rail: #f1f3f7;
+	--workspace-text: #242b38;
+	--workspace-border: #dde1e8;
+	--workspace-muted: #6a7485;
+	--workspace-input: #f5f6f9;
+	--workspace-accent: #5278dc;
+	--workspace-accent-soft: #eaf0ff;
+}
+:root[data-theme="dark"]
+{
+	--workspace-background: #131720;
+	--workspace-panel: #1b202b;
+	--workspace-rail: #141923;
+	--workspace-text: #e3e7f0;
+	--workspace-border: #2c3341;
+	--workspace-muted: #939eb1;
+	--workspace-input: #232a37;
+	--workspace-accent: #92adff;
+	--workspace-accent-soft: #293758;
+}
+@media (max-width: 700px)
+{
+	:root {--workspace-rail-width: 48px;}
+}

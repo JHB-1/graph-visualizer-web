@@ -1,4 +1,5 @@
 import type {GraphTransport} from './types.ts';
+import {defaultFontData} from './font.ts';
 
 // 계산된 스타일 고정, 테마 CSS 변수 없이 독립 SVG로 변환
 export function imageSVG(source: SVGSVGElement): {text: string; width: number; height: number}
@@ -50,7 +51,13 @@ export async function pngImage(source: SVGSVGElement): Promise<Blob>
 {
 	await document.fonts.ready;
 	const image = imageSVG(source);
-	const svg = new Blob([image.text], {type: 'image/svg+xml;charset=utf-8'});
+	const xml = new DOMParser().parseFromString(image.text, 'image/svg+xml');
+	const style = xml.createElementNS('http://www.w3.org/2000/svg', 'style');
+	const fontData = await defaultFontData();
+	style.textContent = '@font-face{font-family:"Pretendard Variable";font-weight:100 900;' +
+		`font-style:normal;src:url("${fontData}") format("woff2");}`;
+	xml.documentElement.prepend(style);
+	const svg = new Blob([new XMLSerializer().serializeToString(xml)], {type: 'image/svg+xml;charset=utf-8'});
 	const url = URL.createObjectURL(svg);
 	try
 	{

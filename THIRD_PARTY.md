@@ -6,6 +6,7 @@ The WASM runtime includes code from the following dependencies. Full notices are
 
 | Component | Version | License |
 |---|---|---|
+| Pretendard Variable (self-hosted UI/default graph font) | 1.3.9 | SIL Open Font License 1.1, `public/licenses/Pretendard-LICENSE.txt` |
 | Boost headers | 1.87.0 | Boost Software License 1.0 |
 | nlohmann JSON | 3.12.0 | MIT |
 | Emscripten generated runtime | 4.0.23 | MIT / University of Illinois NCSA, see complete notice |

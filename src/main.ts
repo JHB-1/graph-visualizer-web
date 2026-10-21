@@ -1,6 +1,7 @@
 import {BrowserCore} from './transport.ts';
 import {samples} from './samples.ts';
 import {startPanels, selectTab, flushStyles} from './panels.ts';
+import {readyDefaultFont} from './renderer/font.ts';
 
 const report = (error: unknown): void =>
 {
@@ -30,7 +31,7 @@ document.getElementById('theme')!.onclick = (): void =>
 try
 {
 	const core = new BrowserCore();
-	await core.exchange({op: 'create', changes: sample.changes, options: sample.options});
+	await Promise.all([core.exchange({op: 'create', changes: sample.changes, options: sample.options}), readyDefaultFont()]);
 	window.graphTransport = core;
 	await import('./renderer/app.ts');
 	if (!window.gv?.ready) throw new Error('렌더러를 시작하지 못했습니다.');
