@@ -17,6 +17,8 @@ for (const name of files.stdout.split('\0').filter(Boolean))
 		throw new Error(`Private/build material cannot be published: ${name}`);
 	if (/\.(cpp|hpp|h)$/.test(name) && name !== 'native/wasm-api.cpp')
 		throw new Error(`Core source or header cannot be published: ${name}`);
+	if (name.endsWith('.woff2') && name !== 'public/fonts/PretendardVariable.woff2')
+		throw new Error(`Unpinned font cannot be published: ${name}`);
 	if (!/\.(wasm|woff2)$/.test(name))
 	{
 		const text = await readFile(path.join(root, name), 'utf8');
