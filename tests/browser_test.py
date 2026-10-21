@@ -307,6 +307,26 @@ class BrowserTests(unittest.TestCase):
 		self.assertEqual(self.page.evaluate("gv.objects.nodes.get('1000').visual.node.size.width"), 120)
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
 
+	def test_named_profile_inheritance_and_presets(self):
+		self.page.locator('#tab-theme').click()
+		profiles = [{'id': 'signal', 'name': '신호', 'style': {'fill': {'r': 220, 'g': 40, 'b': 60, 'a': 255}}}]
+		self.page.locator('#theme-form [data-field="nodeProfiles"]').fill(json.dumps(profiles))
+		self.page.locator('#theme-form button[type="submit"]').click()
+		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.defaults.nodeProfiles.length === 1")
+		self.page.locator('#tab-edit').click()
+		self.page.locator('#object-picker').select_option('node:0')
+		self.page.locator('#selection-form [data-inherit="profile"]').uncheck()
+		self.page.locator('#selection-form [data-field="profile"]').fill('signal')
+		self.page.locator('#selection-form button[type="submit"]').click()
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.style.fill.r === 220")
+		self.page.locator('#tab-theme').click()
+		self.page.locator('#preset-light').click()
+		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.canvas.background.r === 245")
+		self.assertEqual(self.state()['defaults']['nodeProfiles'][0]['id'], 'signal')
+		self.assertEqual(self.page.evaluate("gv.objects.nodes.get('0').visual.style.fill.r"), 220)
+		self.assertEqual(self.page.locator('#error').inner_text(), '')
+		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
+
 
 if __name__ == '__main__':
 	unittest.main(verbosity=2)

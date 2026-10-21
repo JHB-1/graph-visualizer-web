@@ -411,6 +411,8 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		{
 			const defaults = structuredClone(initialDefaults);
 			const canvas = structuredClone(initialCanvas);
+			defaults.nodeProfiles = structuredClone(state.defaults.nodeProfiles);
+			defaults.edgeProfiles = structuredClone(state.defaults.edgeProfiles);
 			if (name !== 'core')
 			{
 				const dark = name === 'dark';
