@@ -268,7 +268,12 @@ function liveInput(target: HTMLElement, read: () => Data, live: LiveInput, repor
 		if (frame !== undefined) cancelAnimationFrame(frame);
 		frame = undefined;
 		if (pending && flight) await flight;
-		if (latest || key) await pump();
+		if (latest || key)
+		{
+			close = true;
+			flight = pump();
+			await flight;
+		}
 	};
 	styleInputs.add(flush);
 	target.oninput = (event): void =>

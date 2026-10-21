@@ -390,7 +390,7 @@ class BrowserTests(unittest.TestCase):
 		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.style.fontFamily === 'Consolas'")
 		self.assertTrue(field.evaluate('(element) => element === document.activeElement'))
 		field.fill('Segoe UI')
-		exported = self.page.evaluate("async () => (await graphTransport.request('export')).file.document")
+		exported = self.page.evaluate("async () => {const [,reply]=await Promise.all([graphTransport.beforeExport(),graphTransport.request('export')]);return reply.file.document}")
 		self.assertEqual(exported['defaults']['node']['fontFamily'], 'Segoe UI')
 		self.assertEqual(self.page.locator('#error').inner_text(), '')
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
