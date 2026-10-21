@@ -204,8 +204,6 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 {
 	let state: State;
 	let revision = '';
-	let initialDefaults: Data;
-	let initialCanvas: Data;
 	let item: {kind: string; id: string} | null = null;
 	let busy = false;
 	let steps: {text: string}[] = [];
@@ -406,26 +404,6 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 
 		safe(async (): Promise<void> => {await run('theme', {text: await file.text()});});
 	};
-	for (const name of ['core', 'light', 'dark'])
-		byId(`preset-${name}`).onclick = (): void =>
-		{
-			const defaults = structuredClone(initialDefaults);
-			const canvas = structuredClone(initialCanvas);
-			defaults.nodeProfiles = structuredClone(state.defaults.nodeProfiles);
-			defaults.edgeProfiles = structuredClone(state.defaults.edgeProfiles);
-			if (name !== 'core')
-			{
-				const dark = name === 'dark';
-				const rgb = (r: number, g: number, b: number): Color => ({r, g, b, a: 255});
-				Object.assign(record(defaults.node), {fill: dark ? rgb(35, 45, 63) : rgb(255, 255, 255),
-					borderColor: dark ? rgb(111, 133, 173) : rgb(133, 151, 185), textColor: dark ? rgb(229, 237, 248) : rgb(37, 48, 69)});
-				Object.assign(record(defaults.edge), {color: dark ? rgb(136, 161, 210) : rgb(91, 118, 166), textColor: null});
-				Object.assign(canvas, {background: dark ? rgb(19, 23, 32) : rgb(245, 247, 251),
-					grid: dark ? rgb(34, 42, 56) : rgb(225, 230, 239)});
-			}
-
-			safe(() => run('settings', {defaults, canvas}));
-		};
 	byId('batch-apply').onclick = (): void =>
 	{
 		safe(async (): Promise<void> => {await core.update(JSON.parse(byId<HTMLTextAreaElement>('batch-text').value)); await refresh();});
@@ -451,8 +429,6 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		safe(() => run('algorithm_step', {step}));
 	};
 	await refresh();
-	initialDefaults = structuredClone(state!.defaults);
-	initialCanvas = structuredClone(state!.canvas);
 	setInterval
 	(
 		(): void =>

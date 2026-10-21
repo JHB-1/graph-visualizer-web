@@ -14,12 +14,12 @@
 			<a class="brand-mark" href="./" aria-label="Graph Visualizer">gv</a>
 			<div role="tablist" aria-label="설정 패널" aria-orientation="vertical">
 				<button role="tab" id="tab-edit" aria-controls="panel-edit" aria-selected="true" data-tab="edit"><span>⌘</span>편집</button>
-				<button role="tab" id="tab-theme" aria-controls="panel-theme" aria-selected="false" data-tab="theme" tabindex="-1"><span>◐</span>테마</button>
+				<button role="tab" id="tab-theme" aria-controls="panel-theme" aria-selected="false" data-tab="theme" tabindex="-1"><span>◐</span>스타일</button>
 				<button role="tab" id="tab-routing" aria-controls="panel-routing" aria-selected="false" data-tab="routing" tabindex="-1"><span>⌁</span>배선</button>
 				<button role="tab" id="tab-analysis" aria-controls="panel-analysis" aria-selected="false" data-tab="analysis" tabindex="-1"><span>⋈</span>분석</button>
 				<button role="tab" id="tab-file" aria-controls="panel-file" aria-selected="false" data-tab="file" tabindex="-1"><span>▤</span>파일</button>
 			</div>
-			<button id="theme" class="rail-bottom" aria-label="밝은 테마와 어두운 테마 전환"><span>☼</span>화면</button>
+			<button id="theme" class="rail-bottom" aria-label="렌더러 UI 밝기 전환, 그래프 문서 변경 없음"><span>☼</span>UI 밝기</button>
 			<a class="repo-link" href="https://github.com/JHB-1/graph-visualizer-web" target="_blank" rel="noopener noreferrer" aria-label="GitHub 저장소">↗</a>
 		</nav>
 		<aside class="sidebar" id="sidebar" aria-label="그래프 설정">
@@ -51,15 +51,14 @@
 					<p class="hint">드래그 이동 · Shift 다중 선택 · 우하단 핸들 크기 조절<br>빈 공간 드래그 이동 · 휠 확대/축소</p>
 				</section>
 				<section id="panel-theme" role="tabpanel" aria-labelledby="tab-theme" hidden>
-					<h1>테마</h1><p class="panel-description">그래프 문서에 저장되는 기본 스타일입니다.</p>
-					<div class="button-row"><button id="preset-dark">다크</button><button id="preset-light">라이트</button><button id="preset-core">코어 기본</button></div>
+					<h1>스타일</h1><p class="panel-description">코어 기본값 → 명명 프로파일 → 개별 설정</p>
 					<form id="theme-form" class="field-list"></form>
 					<section class="control-section"><h2>문서 폰트</h2><form id="font-form" class="field-list"></form>
 						<p class="hint">브라우저에 설치된 글꼴을 사용합니다. 누락 정책은 문서에 저장되며 OS 글꼴 설치 대화상자는 표시하지 않습니다.</p></section>
-					<section class="control-section"><h2>테마 프로파일</h2><p class="hint">명명 스타일, 투명도, 상속 값을 포함한 코어 형식</p>
-						<textarea id="theme-text" spellcheck="false" aria-label="테마 프로파일 텍스트" rows="8"></textarea>
+					<section class="control-section"><h2>스타일 프로파일 입출력</h2><p class="hint">코어 ThemeProfile 형식 · 개별 설정값 묶음</p>
+						<textarea id="theme-text" spellcheck="false" aria-label="코어 스타일 프로파일 텍스트" rows="8"></textarea>
 						<div class="button-row"><button id="theme-apply">텍스트 적용</button><button id="theme-export">.gvtheme 저장</button></div>
-						<label class="file-button">테마 파일 열기<input id="theme-import" type="file" accept=".gvtheme,text/plain" hidden></label>
+						<label class="file-button">프로파일 파일 열기<input id="theme-import" type="file" accept=".gvtheme,text/plain" hidden></label>
 					</section>
 				</section>
 				<section id="panel-routing" role="tabpanel" aria-labelledby="tab-routing" hidden>

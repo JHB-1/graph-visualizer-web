@@ -184,9 +184,8 @@ class BrowserTests(unittest.TestCase):
 		self.assertEqual(self.page.locator('#tab-theme').get_attribute('aria-selected'), 'true')
 
 	def test_core_theme_rgba_history_and_codec(self):
+		original = self.state()['theme_text']
 		self.page.locator('#tab-theme').click()
-		self.page.locator('#preset-light').click()
-		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.canvas.background.r === 245")
 		self.page.locator('#theme-form').get_by_text('노드', exact=True).click()
 		self.page.locator('#theme-form [data-field="node.fill.a"]').fill('0')
 		self.page.locator('#theme-form [data-field="node.borderWidth"]').fill('0')
@@ -201,7 +200,8 @@ class BrowserTests(unittest.TestCase):
 		theme = exported.value.path().read_text(encoding='utf-8')
 		self.assertTrue(theme.startswith('GV_THEME 1'))
 		self.assertIn('node.fill=', theme)
-		self.page.locator('#preset-dark').click()
+		self.page.locator('#theme-text').fill(original)
+		self.page.locator('#theme-apply').click()
 		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.style.fill.a === 255")
 		self.page.locator('#theme-text').fill(theme)
 		self.page.locator('#theme-apply').click()
@@ -281,12 +281,13 @@ class BrowserTests(unittest.TestCase):
 		self.page.locator('#font-form [data-field="missing"]').select_option('1')
 		self.page.locator('#font-form button').click()
 		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.fonts.fallbackFamily === 'monospace'")
-		before = self.state()['canvas']
+		before = self.state()
 		self.page.locator('#theme-text').fill('GV_THEME 999\n')
 		self.page.locator('#theme-apply').click()
 		self.page.wait_for_function("() => document.querySelector('#error').textContent.length > 0")
-		self.assertEqual(self.state()['canvas'], before)
-		self.page.locator('#preset-core').click()
+		self.assertEqual(self.state()['canvas'], before['canvas'])
+		self.page.locator('#theme-text').fill(before['theme_text'])
+		self.page.locator('#theme-apply').click()
 		self.page.wait_for_function("() => document.querySelector('#error').textContent === ''")
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
 
@@ -307,7 +308,7 @@ class BrowserTests(unittest.TestCase):
 		self.assertEqual(self.page.evaluate("gv.objects.nodes.get('1000').visual.node.size.width"), 120)
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
 
-	def test_named_profile_inheritance_and_presets(self):
+	def test_named_profile_inheritance_and_settings(self):
 		self.page.locator('#tab-theme').click()
 		profiles = [{'id': 'signal', 'name': '신호', 'style': {'fill': {'r': 220, 'g': 40, 'b': 60, 'a': 255}}}]
 		self.page.locator('#theme-form [data-field="nodeProfiles"]').fill(json.dumps(profiles))
@@ -320,12 +321,32 @@ class BrowserTests(unittest.TestCase):
 		self.page.locator('#selection-form button[type="submit"]').click()
 		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.style.fill.r === 220")
 		self.page.locator('#tab-theme').click()
-		self.page.locator('#preset-light').click()
+		self.page.locator('#theme-form').get_by_text('캔버스', exact=True).click()
+		self.page.locator('#theme-form [data-field="canvas.background"]').fill('#f5f7fb')
+		self.page.locator('#theme-form button[type="submit"]').click()
 		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.canvas.background.r === 245")
 		self.assertEqual(self.state()['defaults']['nodeProfiles'][0]['id'], 'signal')
 		self.assertEqual(self.page.evaluate("gv.objects.nodes.get('0').visual.style.fill.r"), 220)
 		self.assertEqual(self.page.locator('#error').inner_text(), '')
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
+
+	def test_renderer_brightness_does_not_edit_core_document(self):
+		before = self.state()
+		revision = self.page.evaluate('gv.documentRevision')
+		appearance = self.page.locator('html').get_attribute('data-theme')
+		background = self.page.locator('#graph').evaluate('(element) => getComputedStyle(element).backgroundColor')
+		document = self.page.evaluate("async () => (await graphTransport.request('export')).file.document")
+		self.page.locator('#theme').click()
+		self.assertNotEqual(self.page.locator('html').get_attribute('data-theme'), appearance)
+		self.assertEqual(self.page.locator('#graph').evaluate('(element) => getComputedStyle(element).backgroundColor'), background)
+		self.assertEqual(self.page.evaluate('gv.documentRevision'), revision)
+		for key in ['defaults', 'canvas', 'nodes', 'edges', 'fonts', 'undo_count']:
+			self.assertEqual(self.state()[key], before[key])
+
+		self.assertEqual(self.page.evaluate("async () => (await graphTransport.request('export')).file.document"), document)
+		self.page.locator('#tab-theme').click()
+		self.assertEqual(self.page.locator('#panel-theme h1').inner_text(), '스타일')
+		self.assertEqual(self.page.locator('[id^="preset-"]').count(), 0)
 
 
 if __name__ == '__main__':

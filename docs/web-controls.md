@@ -10,10 +10,10 @@
 | 편집 | 복사/붙여넣기/복제/삭제/그룹/해제/내부 범위 | GraphSession 공개 편집/탐색 API |
 | 편집 | 연결 추가/재연결/방향/반전/가중치/경유점/잠금/라벨 좌표 | GraphSession, edge_update |
 | 편집 | 전체 스타일/개별 속성 상속 복구 | optional 스타일 값, resetNodeStyle/resetEdgeStyle |
-| 테마 | 노드/엣지 RGBA/폰트/굵기/크기/패딩/캔버스 전체 속성 | Defaults, CanvasStyle |
-| 테마 | 명명 노드/엣지 프로파일 | 전체 프로파일 목록 JSON, 코어 테마 텍스트 |
-| 테마 | UTF-8 .gvtheme 입출력 | parse/serialize/theme_profile_from_document, 브라우저 파일 어댑터 |
-| 테마 | 폰트 포함/누락 정책/대체 글꼴 | FontSettings, OS 글꼴 설치/바이너리 등록 UI는 미제공 |
+| 스타일 | 노드/엣지 RGBA/폰트/굵기/크기/패딩/캔버스 전체 속성 | Defaults, CanvasStyle |
+| 스타일 | 명명 노드/엣지 프로파일 | 전체 프로파일 목록 JSON, 코어 ThemeProfile 텍스트 |
+| 스타일 | UTF-8 .gvtheme 입출력 | parse/serialize/theme_profile_from_document, 브라우저 파일 어댑터 |
+| 스타일 | 폰트 포함/누락 정책/대체 글꼴 | FontSettings, OS 글꼴 설치/바이너리 등록 UI는 미제공 |
 | 배선 | Options 전체 속성, 직선/직각/8방향/베지어 | setOptions, edge_update.routing |
 | 배선 | Undo 제한, 격자 표시 | setUndoLimit, 표시 여부는 문서 밖 호스트 상태 |
 | 분석 | 5종 알고리즘/단계별 강조 | runAlgorithm/setAlgorithmStep/clearAlgorithm |
@@ -24,6 +24,10 @@
 기본 크기 변경은 새 노드에 적용되며 기존 문서의 실제 크기를 일괄 덮어쓰지 않습니다.
 테마 설정은 하나의 beginEdit/endEdit으로 묶어 Undo 한 번으로 복구합니다.
 선택/탐색/카메라/분석 강조는 문서 이력과 분리합니다.
+
+`ThemeProfile`이라는 API 이름은 개별 설정값 묶음의 입출력 계약입니다. 코어에는 다크/라이트
+모드가 없으므로 웹이 정의한 다크/라이트/코어 기본 프리셋은 제공하지 않습니다.
+화면 아래 `UI 밝기`는 렌더러 CSS만 변경하며 그래프 문서/Scene 스타일/Undo/revision/내보내기 값을 변경하지 않습니다.
 
 코어의 플랫폼 계약 전부가 브라우저 기능인 것은 아닙니다. TCP/파일 시스템 어댑터는 빌드 OFF이고,
 소켓 수집/OS 프로세스/OS 폰트 설치/사용자 정의 C++ Router 교체는 이 정적 웹 UI에서 제공하지 않습니다.

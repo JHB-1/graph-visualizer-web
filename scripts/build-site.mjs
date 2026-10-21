@@ -13,5 +13,5 @@ await writeFile(path.join(output, 'style.css'), await readFile(path.join(root, '
 await build({absWorkingDir: root, entryPoints: {'app': 'src/main.ts', 'engine-worker': 'src/engine-worker.ts'},
 	bundle: true, format: 'esm', target: 'es2022', platform: 'browser', minify: true, sourcemap: false, outdir: output});
 const lock = JSON.parse(await readFile(path.join(root, 'core.lock.json'), 'utf8'));
-await writeFile(path.join(output, 'build.json'), JSON.stringify({version: '0.2.0', core: lock.commit, runtime: 'WebAssembly'}));
+await writeFile(path.join(output, 'build.json'), JSON.stringify({version: '0.2.1', core: lock.commit, runtime: 'WebAssembly'}));
 console.log('Built GitHub Pages assets at dist/.');
