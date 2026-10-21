@@ -2,6 +2,10 @@ import {BrowserCore} from './transport.ts';
 import {samples} from './samples.ts';
 import {startPanels, selectTab, flushStyles} from './panels.ts';
 import {readyDefaultFont} from './renderer/font.ts';
+import {startDocuments} from './documents.ts';
+import {startExplorer} from './explorer.ts';
+import {startDirectEditing} from './direct-edit.ts';
+import {startCommands} from './commands.ts';
 
 const report = (error: unknown): void =>
 {
@@ -36,6 +40,10 @@ try
 	await import('./renderer/app.ts');
 	if (!window.gv?.ready) throw new Error('렌더러를 시작하지 못했습니다.');
 	await startPanels(core, report);
+	await startDocuments(core, report, sample.name);
+	await startExplorer(core, report);
+	startDirectEditing(core, report);
+	startCommands(core, report);
 
 	document.getElementById('engine-state')!.textContent = 'C++ 코어 · 브라우저 실행';
 	document.getElementById('engine-state')!.classList.add('ready');

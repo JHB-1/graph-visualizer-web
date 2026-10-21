@@ -18,6 +18,9 @@ export class BrowserCore implements GraphTransport
 	private events: {delta: Delta; document_revision: string}[] = [];
 	private pulse = '0';
 	private closed = false;
+	private renderOffset = 0n;
+	private lastRender = 0n;
+	private documentRevision = '';
 
 	constructor()
 	{
@@ -64,8 +67,23 @@ export class BrowserCore implements GraphTransport
 				this.worker.postMessage({id, request: {graph_id: this.graphId, ...request}});
 			}
 		);
+		if (reply.result.replaced)
+		{
+			this.renderOffset = this.lastRender;
+			this.events = [];
+		}
+
+		if (reply.result.render_revision !== undefined)
+		{
+			const mapped = BigInt(String(reply.result.render_revision)) + this.renderOffset;
+			reply.result.render_revision = String(mapped);
+			if (this.lastRender < mapped) this.lastRender = mapped;
+		}
+
 		if (reply.delta)
 		{
+			reply.delta.previous_revision = String(BigInt(reply.delta.previous_revision) + this.renderOffset);
+			reply.delta.revision = String(BigInt(reply.delta.revision) + this.renderOffset);
 			reply.delta.context.follow_host_theme = false;
 			if (reply.delta.revision !== reply.delta.previous_revision)
 			{
@@ -73,6 +91,13 @@ export class BrowserCore implements GraphTransport
 				if (this.events.length > 64) this.events.shift();
 				window.dispatchEvent(new Event('gv-core-update'));
 			}
+		}
+
+		const revision = String(reply.result.document_revision ?? this.documentRevision);
+		if (revision !== this.documentRevision)
+		{
+			this.documentRevision = revision;
+			window.dispatchEvent(new CustomEvent('gv-document-change', {detail: {revision}}));
 		}
 
 		return reply;

@@ -1,4 +1,5 @@
 #include <cstring>
+#include <set>
 
 #include <gv/algorithms.hpp>
 
@@ -6,6 +7,69 @@ namespace
 {
 	std::optional<gv::Document> clipboard;
 	std::map<std::string, std::string> live_styles;
+
+	gv::Document read_document(const json& file)
+	{
+		if (file.at("format") != "graph-visualizer" or file.at("version") != 1)
+			throw fault("invalid_input", "지원하지 않는 그래프 파일 형식/버전입니다");
+
+		const json& input = file.at("document");
+		for (const auto& [key, ignored] : input.items())
+			if (key != "nodes" and key != "edges" and key != "defaults" and key != "options" and key != "canvas" and key != "fonts")
+				throw fault("invalid_input", "Unknown document field: " + key);
+
+		gv::Document document;
+		document.nodes = input.at("nodes").get<std::vector<gv::Node>>();
+		document.edges = input.at("edges").get<std::vector<gv::Edge>>();
+		document.defaults = input.at("defaults").get<gv::Defaults>();
+		document.options = input.at("options").get<gv::Options>();
+		document.canvas = input.at("canvas").get<gv::CanvasStyle>();
+		for (const json& node : input.at("nodes"))
+			for (const std::string key : { "id", "label", "center", "size", "parent", "subgraph", "expanded", "style" })
+				if (not node.contains(key))
+					throw fault("invalid_input", "Missing node field: " + key);
+
+		for (const json& edge : input.at("edges"))
+			for (const std::string key : { "id", "source", "target", "direction", "style" })
+				if (not edge.contains(key))
+					throw fault("invalid_input", "Missing edge field: " + key);
+
+		const json& fonts = input.at("fonts");
+		document.fonts.embed = fonts.at("embed").get<bool>();
+		const int missing = fonts.at("missing").get<int>();
+		if (missing < 0 or 2 < missing)
+			throw fault("invalid_input", "Invalid font policy");
+
+		document.fonts.missing = static_cast<gv::MissingFontPolicy>(missing);
+		document.fonts.fallbackFamily = fonts.at("fallbackFamily").get<std::string>();
+		for (const json& input_asset : fonts.at("assets"))
+		{
+			gv::FontAsset asset;
+			asset.family = input_asset.at("family").get<std::string>();
+			asset.style = input_asset.at("style").get<std::string>();
+			const std::string hex = input_asset.at("data").get<std::string>();
+			std::vector<std::uint8_t> bytes;
+			if (hex.size() % 2 != 0)
+				throw fault("invalid_input", "Invalid embedded font data");
+
+			for (std::size_t index = 0; index < hex.size(); index += 2)
+			{
+				unsigned int value = 0;
+				const auto [end, error] = std::from_chars(hex.data() + index, hex.data() + index + 2, value, 16);
+				if (error != std::errc() or end != hex.data() + index + 2)
+					throw fault("invalid_input", "Invalid embedded font data");
+
+				bytes.push_back(static_cast<std::uint8_t>(value));
+			}
+
+			asset.data = gv::FontData(std::move(bytes));
+			document.fonts.assets.push_back(std::move(asset));
+		}
+
+		gv::validate(document);
+
+		return document;
+	}
 
 	void finish_style(const std::string& graph_id)
 	{
@@ -23,10 +87,73 @@ namespace
 		const std::string graph_id = request.value("graph_id", "");
 		const std::string action = request.value("action", "");
 		const bool live = op == "web_edit" and request.contains("edit_key") and action != "end_style";
-		const bool reading = op == "web_read" or op == "status" or op == "query" or op == "snapshot";
+		const bool reading = op == "web_read" or op == "status" or op == "query" or op == "snapshot" or
+			op == "web_checkpoint" or op == "web_validate" or op == "web_endpoints";
 		const bool feedback = op == "ui" and (action == "hover" or action == "active");
 		if (not live and not reading and not feedback and action != "end_style")
 			finish_style(graph_id);
+
+		if (op == "web_checkpoint")
+			return execute({ { "op", "export" }, { "graph_id", graph_id } });
+
+		if (op == "web_validate")
+		{
+			read_document(request.at("file"));
+
+			return { { "result", { { "valid", true } } } };
+		}
+		if (op == "web_endpoints")
+		{
+			const auto found = graphs.find(graph_id);
+			if (found == graphs.end())
+				throw fault("closed_graph", "Graph does not exist");
+
+			check_idle(*found->second);
+			check_revision(request, *found->second);
+			if (request.at("ids").size() > 2)
+				throw fault("size_limit", "At most two endpoint representatives");
+
+			json candidates = json::object();
+			for (const json& id : request.at("ids"))
+				candidates[id.get<std::string>()] = id_json(found->second->graph.session().endpointCandidates(parse_id(id)));
+
+			return { { "result", { { "candidates", candidates } } } };
+		}
+
+		if (op == "web_open")
+		{
+			const auto found = graphs.find(graph_id);
+			if (found == graphs.end())
+				throw fault("closed_graph", "Graph does not exist");
+
+			check_idle(*found->second);
+			check_revision(request, *found->second);
+			const gv::Document document = read_document(request.at("file"));
+			auto replacement = std::make_unique<graph_state>(document);
+			replacement->document_revision = found->second->document_revision + 1;
+			replacement->focus_event = found->second->focus_event;
+			gv::scene_delta delta = replacement->graph.scene_changes();
+			const gv::Scene previous = found->second->graph.session().scene();
+			for (const gv::NodeVisual& node : previous.frames)
+				delta.removed_frames.push_back(node.node.id);
+
+			for (const gv::NodeVisual& node : previous.nodes)
+				delta.removed_nodes.push_back(node.node.id);
+
+			for (const gv::EdgeVisual& edge : previous.edges)
+				delta.removed_edges.push_back(edge.id);
+
+			replacement->render_revision = delta.revision;
+			json result = versions(*replacement);
+			result["replaced"] = true;
+			json response = { { "result", result }, { "delta", delta } };
+
+			// 검증/새 세션 준비 후 원본 교체, 입력 오류 시 기존 문서 보존
+			found->second.swap(replacement);
+			clipboard.reset();
+
+			return response;
+		}
 
 		if (op != "web_read" and op != "web_edit")
 			return execute(request);
@@ -245,6 +372,45 @@ namespace
 						session.addNode(request.at("point").get<gv::Point>(), request.value("label", "노드"));
 					else if (action == "reverse")
 						session.reverseEdge(parse_id(request.at("id")));
+					else if (action == "nudge")
+					{
+						const gv::Point offset = request.at("offset").get<gv::Point>();
+						std::set<gv::NodeId> selected_nodes;
+						for (const gv::NodeId id : session.selectedNodes())
+							selected_nodes.insert(id);
+
+						for (const gv::Node& node : before.nodes)
+						{
+							if (not selected_nodes.contains(node.id))
+								continue;
+
+							std::optional<gv::NodeId> parent = node.parent;
+							bool nested = false;
+							while (parent)
+							{
+								if (selected_nodes.contains(*parent)) { nested = true; break; }
+
+								const auto found_parent = std::find_if
+								(
+									before.nodes.begin(), before.nodes.end(),
+									[parent](const gv::Node& item) -> bool { return item.id == parent; }
+								);
+								parent = found_parent == before.nodes.end() ? std::nullopt : found_parent->parent;
+							}
+
+							if (not nested)
+								session.moveNode(node.id, { node.center.x + offset.x, node.center.y + offset.y });
+						}
+					}
+					else if (action == "label_position")
+						session.setEdgeLabelPosition(parse_id(request.at("id")), request.at("point").get<gv::Point>());
+					else if (action == "waypoints")
+						session.setEdgeWaypoints(parse_id(request.at("id")), request.at("points").get<std::vector<gv::Point>>());
+					else if (action == "reconnect")
+						session.reconnectEdge
+						(
+							parse_id(request.at("id")), parse_id(request.at("source")), parse_id(request.at("target"))
+						);
 					else if (action == "reset_style")
 					{
 						if (request.at("kind") == "node")
@@ -289,6 +455,7 @@ namespace
 			{ "embed", document.fonts.embed }, { "missing", document.fonts.missing },
 			{ "fallbackFamily", document.fonts.fallbackFamily }
 		};
+		extra["scope"] = id_json(session.scope());
 		extra["theme_text"] = gv::serialize_theme_profile(gv::theme_profile_from_document(document));
 		json response = execute({ { "op", "status" }, { "graph_id", request.at("graph_id") } });
 		response["result"]["web"] = extra;
@@ -303,10 +470,18 @@ extern "C" const char* gv_request(const char* request)
 	static std::string response;
 	try
 	{
-		if (request == nullptr or std::strlen(request) > 1'048'576)
+		if (request == nullptr or std::strlen(request) > 1'049'600)
 			throw fault("size_limit", "Request exceeds 1 MiB");
 
-		response = web_execute(json::parse(request)).dump();
+		const json parsed = json::parse(request);
+		const bool file_request = parsed.value("op", "") == "web_open" or parsed.value("op", "") == "web_validate";
+		if (std::strlen(request) > 1'048'576 and not file_request)
+			throw fault("size_limit", "Request exceeds 1 MiB");
+
+		if (file_request and parsed.at("file").dump().size() > 1'048'576)
+			throw fault("size_limit", "Graph file exceeds 1 MiB");
+
+		response = web_execute(parsed).dump();
 	}
 	catch (const fault& error)
 	{

@@ -64,6 +64,7 @@ h2 span {float: right; font-variant-numeric: tabular-nums;}
 .field-list .color-control input[type=number] {width: 64px;}
 .field-list .optional {grid-column: 1 / -1; display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--gv-muted);}
 .field-list .wide-field {display: flex; flex-direction: column; align-items: stretch; gap: 6px;}
+.field-list .check-field {display: flex; gap: 6px;}
 summary {cursor: pointer; font-size: 11px; color: var(--gv-muted); padding: 4px 0;}
 details > form {margin-top: 10px;}
 .primary {background: #5578d5; color: #fff; border-color: #6689e4;}
@@ -109,3 +110,21 @@ main#workspace, main#workspace.details-open {position: relative; display: block;
 	.canvas-controls button {padding: 5px;}
 	.canvas-caption {font-size: 9px;}
 }
+.item-list {display: flex; flex-direction: column; gap: 4px; margin: 8px 0;}
+.item-row {display: flex; gap: 4px; padding-left: calc(var(--item-depth, 0) * 10px);}
+.item-row > button:first-child {flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis;}
+.item-row > button:last-child {flex-shrink: 0;}
+.item-row > button[aria-pressed=true] {background: var(--workspace-accent-soft); border-color: var(--workspace-accent);}
+.recovery-prompt {border: 1px solid var(--workspace-accent); border-radius: 5px; padding: 10px; margin: 12px 0;}
+#save-indicator {margin-left: auto; white-space: nowrap;}
+.direct-handle {fill: var(--workspace-panel); stroke: var(--workspace-accent); stroke-width: 2px; cursor: crosshair;}
+.connect-handle {opacity: 0; pointer-events: none;}
+.visual:hover .connect-handle, .visual:focus-within .connect-handle {opacity: 1; pointer-events: all;}
+.visual:not([data-selected=true]) .waypoints {display: none;}
+.edge-label[data-selected=true] {cursor: move;}
+.direct-preview {stroke: var(--workspace-accent); stroke-width: 2px; stroke-dasharray: 6 4; pointer-events: none;}
+.endpoint-dialog {background: var(--panel); color: var(--workspace-text); border: 1px solid var(--gv-border); border-radius: 8px;}
+.endpoint-dialog label {display: block; margin: 12px 0;}
+.endpoint-dialog::backdrop {background: #0007;}
+.export-measure {position: fixed; visibility: hidden; pointer-events: none;}
+.visual:focus-visible {outline: 2px solid var(--workspace-accent); outline-offset: 3px;}

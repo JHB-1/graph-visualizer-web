@@ -16,6 +16,8 @@
 			<div role="tablist" aria-label="설정 패널" aria-orientation="vertical">
 				<button role="tab" id="tab-edit" aria-controls="panel-edit" aria-selected="true" data-tab="edit"><span>⌘</span>편집</button>
 				<button role="tab" id="tab-theme" aria-controls="panel-theme" aria-selected="false" data-tab="theme" tabindex="-1"><span>◐</span>스타일</button>
+				<button role="tab" id="tab-items" aria-controls="panel-items" aria-selected="false" data-tab="items" tabindex="-1">
+					<span aria-hidden="true">☷</span>항목</button>
 				<button role="tab" id="tab-routing" aria-controls="panel-routing" aria-selected="false" data-tab="routing" tabindex="-1"><span>⌁</span>배선</button>
 				<button role="tab" id="tab-analysis" aria-controls="panel-analysis" aria-selected="false" data-tab="analysis" tabindex="-1"><span>⋈</span>분석</button>
 				<button role="tab" id="tab-file" aria-controls="panel-file" aria-selected="false" data-tab="file" tabindex="-1"><span>▤</span>파일</button>
@@ -52,6 +54,14 @@
 							<details><summary>원본 데이터</summary><pre id="details">노드 또는 엣지를 선택하세요.</pre></details></div>
 					</section>
 					<p class="hint">드래그 이동 · Shift 다중 선택 · 우하단 핸들 크기 조절<br>빈 공간 드래그 이동 · 휠 확대/축소</p>
+					<details><summary>단축키와 직접 편집</summary><p class="hint">
+						Ctrl/Cmd+S JSON 출력 · Ctrl/Cmd+O 파일 열기 · Ctrl/Cmd+F 항목 검색<br>
+						Ctrl/Cmd+Z 취소 · Shift+Z 다시 실행 · A 전체 선택 · C/V 복사/붙여넣기 · D 복제<br>
+						Tab 항목 이동 · Enter/Space 선택 · Delete 삭제 · 방향키 노드 이동 · Shift 10배<br>
+						노드 오른쪽 원: 연결 드래그 · 선택한 엣지 끝점: 재연결<br>
+						엣지 더블클릭: 경유점 추가 · 경유점 우클릭: 삭제 · 선택 라벨/경유점 드래그<br>
+						Escape 직접 편집 취소 · 두 손가락 이동/핀치 확대
+					</p></details>
 				</section>
 				<section id="panel-theme" role="tabpanel" aria-labelledby="tab-theme" hidden>
 					<h1>스타일</h1><p class="panel-description">코어 기본값 → 명명 프로파일 → 개별 설정<br>값을 변경하면 바로 반영됩니다.</p>
@@ -72,19 +82,53 @@
 					<form id="options-form" class="field-list"></form>
 					<section class="control-section"><h2>이력</h2><form id="history-form" class="field-list"><label>최대 Undo 수<input id="history-limit" type="number" min="0" max="10000" value="100"></label><button type="submit">설정</button></form></section>
 				</section>
+				<section id="panel-items" role="tabpanel" aria-labelledby="tab-items" hidden>
+					<h1>항목과 탐색</h1><p class="panel-description">이름·ID로 찾고 원하는 위치로 이동하세요.</p>
+					<label class="full-field">검색<input id="item-search" type="search" placeholder="이름 또는 ID" autocomplete="off"></label>
+					<label class="full-field">종류<select id="item-kind"><option value="all">전체</option>
+						<option value="node">노드/그룹</option><option value="edge">엣지</option></select></label>
+					<p id="item-count" class="hint" role="status"></p><div id="item-list" class="item-list" aria-label="그래프 항목"></div>
+					<section class="control-section"><h2>화면</h2><p id="scope-path" class="hint"></p>
+						<div class="button-row"><button id="view-back">이전</button><button id="view-forward">다음</button></div>
+						<button id="fit-selection">선택 항목에 맞춤</button>
+						<label class="full-field">북마크 이름<input id="bookmark-name" type="text" maxlength="80"></label>
+						<button id="bookmark-add">현재 화면 저장</button><div id="bookmark-list" class="item-list"></div>
+					</section>
+				</section>
 				<section id="panel-analysis" role="tabpanel" aria-labelledby="tab-analysis" hidden>
 					<h1>그래프 분석</h1><p class="panel-description">코어 알고리즘과 단계별 강조</p>
 					<form id="algorithm-form" class="field-list"><label>알고리즘<select id="algorithm-kind"><option value="0">너비 우선 탐색 (BFS)</option><option value="1">깊이 우선 탐색 (DFS)</option><option value="2">최단 경로</option><option value="3">연결 성분</option><option value="4">사이클</option></select></label>
 						<label>시작 노드<select id="algorithm-start"></select></label><label>도착 노드<select id="algorithm-target"></select></label><button type="submit" class="primary">실행</button></form>
 					<p id="algorithm-result" role="status">분석을 실행하세요.</p><label class="full-field">재생 단계<input id="algorithm-step" type="range" min="0" max="0" value="0" disabled></label>
 					<p id="algorithm-description" class="hint"></p><button data-command="algorithm_clear">강조 지우기</button>
-					<section class="control-section"><h2>실행 상태</h2><pre id="status"></pre><span id="route-status" role="status"></span></section>
+					<section class="control-section"><h2>실행 상태</h2><pre id="status"></pre>
+						<span id="route-status" role="status"></span><div id="diagnostic-list" class="item-list"></div></section>
 				</section>
 				<section id="panel-file" role="tabpanel" aria-labelledby="tab-file" hidden>
-					<h1>파일과 데이터</h1><p class="panel-description">데이터는 브라우저 메모리에서만 처리됩니다.</p>
+					<h1>파일과 데이터</h1><p class="panel-description">파일과 복구 기록은 이 브라우저에서만 처리됩니다.</p>
+					<p id="document-name">새 문서</p>
+					<p id="document-state" class="hint" role="status" title="마지막 JSON 파일 열기/출력 기준"></p>
+					<button id="document-new">새 문서</button>
+					<label class="file-button">파일 열기 (.json)<input id="document-open" type="file" accept=".json,application/json" hidden></label>
+					<p class="hint">파일을 화면에 끌어 놓아도 열 수 있습니다. 최대 1 MiB.</p>
+					<section id="recovery-prompt" class="recovery-prompt" role="region" aria-label="이전 작업 복구" hidden>
+						<strong>이전 작업을 복구할까요?</strong><p id="recovery-info" class="hint"></p>
+						<div class="button-row"><button id="recovery-restore">복구</button><button id="recovery-discard">버리기</button></div>
+					</section>
+					<label class="check-field"><input id="autosave" type="checkbox" checked>자동 저장</label>
+					<p id="autosave-state" class="hint" role="status"></p><button id="draft-clear">로컬 기록 지우기</button>
 					<label class="full-field">샘플<select id="sample"><option value="workflow">워크플로</option><option value="routing">배선과 장애물</option><option value="stream">증분 갱신</option></select></label><p id="sample-description" class="hint"></p>
 					<div class="export-control"><button id="export-toggle" aria-expanded="false" aria-controls="export-menu" disabled>파일 출력 ▾</button>
-						<div id="export-menu" hidden><button id="export-image">이미지 파일로 출력 (.png)</button><button id="export-graph">그래프 파일로 출력 (.json)</button></div></div>
+						<div id="export-menu" hidden><button id="export-image">이미지 파일로 출력 (.png)</button>
+							<button id="export-svg">벡터 이미지로 출력 (.svg)</button>
+							<button id="export-graph">그래프 파일로 출력 (.json)</button></div></div>
+					<details><summary>이미지 출력 옵션</summary><div class="field-list">
+						<label>배율<select id="export-scale"><option value="1">1×</option><option value="2">2×</option>
+							<option value="3">3×</option></select></label>
+						<label>범위<select id="export-area"><option value="all">현재 범위 전체</option>
+							<option value="selection">선택 항목</option><option value="viewport">현재 화면</option></select></label>
+						<label class="check-field"><input id="export-transparent" type="checkbox">투명 배경</label>
+					</div></details>
 					<section class="control-section"><h2>증분 데이터</h2><p class="hint">노드·엣지 ID별 추가, 수정, 삭제. 전체 그래프를 재생성하지 않습니다.</p>
 						<textarea id="batch-text" rows="10" spellcheck="false" aria-label="증분 배치 JSON">{
 	"updated_nodes": [{"id": "2", "label": "새 데이터"}]
@@ -92,7 +136,9 @@
 					<section class="control-section"><h2>브라우저 실행</h2><p class="hint">파일 출력은 다운로드로 처리합니다. TCP 소켓, OS 폰트 설치와 원격 프로세스 수집은 웹에서 제공하지 않습니다.</p></section>
 				</section>
 			</div>
-			<div class="sidebar-status"><span id="pulse" aria-label="데이터 갱신 활동">●</span><span id="engine-state" role="status">코어 준비 중</span><span id="connection" hidden></span></div>
+			<div class="sidebar-status"><span id="pulse" aria-label="데이터 갱신 활동">●</span>
+				<span id="engine-state" role="status">코어 준비 중</span><span id="save-indicator" role="status"></span>
+				<span id="connection" hidden></span></div>
 		</aside>
 		<main id="workspace" aria-label="그래프 작업 공간">
 			<div class="canvas-controls"><button id="sidebar-open" aria-label="사이드바 펼치기" aria-controls="sidebar" aria-expanded="true">☰</button>

@@ -3,7 +3,7 @@
 	"commit": "206fca4494d0d61f8abda3400edd712524e1ef6b",
 	"emscripten": "emscripten/emsdk:4.0.23@sha256:86537645c51e44899812d29820ee3b64b96c321ebb2aba4416a04ceeb1bcde62",
 	"artifacts": {
-		"gv-core.mjs": "bba325628735fad072dfdac8eab51c97340e7b6a59643372290b29d465866cd2",
-		"gv-core.wasm": "687d8cec399d736d99c1a0d431570a89c2e07f4250f33dab7e1461a6d26a7faa"
+		"gv-core.mjs": "b0ca4059380d9ee74e2f20e7fdf9b4d4beea5876ef9fe931dd1d7d143313f3c8",
+		"gv-core.wasm": "aa6ea6073a2035dc952b9ec5c46e417590bf83d66f6376e4366b48b889f66a6c"
 	}
 }

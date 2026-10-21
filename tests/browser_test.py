@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import base64
 import os
 from pathlib import Path
 import threading
@@ -41,7 +42,8 @@ class BrowserTests(unittest.TestCase):
 		cls.http.server_close()
 
 	def setUp(self):
-		self.page = self.browser.new_page(viewport={'width': 1440, 'height': 1050})
+		self.context = self.browser.new_context(viewport={'width': 1440, 'height': 1050})
+		self.page = self.context.new_page()
 		self.errors = []
 		self.requests = []
 		self.page.on('pageerror', lambda error: self.errors.append(str(error)))
@@ -53,7 +55,7 @@ class BrowserTests(unittest.TestCase):
 	def tearDown(self):
 		(ROOT / 'test-results').mkdir(exist_ok=True)
 		self.page.screenshot(path=str(ROOT / 'test-results' / (self._testMethodName + '.png')), full_page=True)
-		self.page.close()
+		self.context.close()
 		self.assertEqual(self.errors, [])
 
 	def test_wasm_and_no_backend(self):
@@ -215,6 +217,7 @@ class BrowserTests(unittest.TestCase):
 		for sample in ['routing', 'stream']:
 			self.page.locator('#tab-file').click()
 			self.page.locator('#sample').select_option(sample)
+			self.page.wait_for_url('**/?sample=' + sample)
 			self.page.wait_for_function('() => window.gv?.ready')
 			self.page.wait_for_function("() => document.querySelector('#engine-state').textContent.includes('브라우저 실행')")
 			self.assertEqual(self.page.locator('#sample').input_value(), sample)
@@ -239,6 +242,378 @@ class BrowserTests(unittest.TestCase):
 
 	def state(self):
 		return self.page.evaluate("async () => (await graphTransport.exchange({op:'web_read'})).result.web")
+
+	def document_file(self):
+		return self.page.evaluate("async () => (await graphTransport.request('export')).file")
+
+	def open_document(self, value, filename='opened.json'):
+		payload = { 'name': filename, 'mimeType': 'application/json', 'buffer': json.dumps(value, ensure_ascii=False).encode('utf-8') }
+		self.page.locator('#document-open').set_input_files(payload)
+
+	def drafts(self, page=None):
+		return (page or self.page).evaluate('''() => new Promise((resolve,reject) =>
+		{
+			const request = indexedDB.open('gv-web-workspace',1);
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () =>
+			{
+				const database = request.result;
+				const transaction = database.transaction('drafts','readonly');
+				const result = transaction.objectStore('drafts').getAll();
+				transaction.oncomplete = () => {database.close();resolve(result.result);};
+			};
+		})''')
+
+	def test_document_open_roundtrip_and_invalid_preserves_original(self):
+		file = self.document_file()
+		file['document']['defaults']['node']['fill']['a'] = 0
+		file['document']['nodes'][0]['label'] = '열기 검증'
+		self.page.locator('#tab-file').click()
+		self.open_document(file)
+		self.page.wait_for_function("() => gv.objects.nodes.get('0')?.visual.node.label === '열기 검증'")
+		self.assertEqual(self.document_file()['document'], file['document'])
+		self.assertEqual(self.state()['undo_count'], 0)
+		self.assertEqual(self.page.locator('#document-name').inner_text(), 'opened.json')
+		self.assertEqual(self.page.locator('#document-state').inner_text(), '미저장 변경 없음')
+		before = self.document_file()['document']
+		invalid = json.loads(json.dumps(file))
+		invalid['document']['edges'][0]['target'] = '999999'
+		self.open_document(invalid, 'invalid.json')
+		self.page.wait_for_function("() => document.querySelector('#error').textContent.length > 0")
+		self.assertEqual(self.document_file()['document'], before)
+		self.assertEqual(self.page.locator('#document-name').inner_text(), 'opened.json')
+		payload = { 'name': 'big.json', 'mimeType': 'application/json', 'buffer': b' ' * 1_048_577 }
+		self.page.locator('#document-open').set_input_files(payload)
+		self.page.wait_for_function("() => document.querySelector('#error').textContent.includes('1 MiB')")
+		self.assertEqual(self.document_file()['document'], before)
+		self.page.locator('#document-new').click()
+		self.page.wait_for_function('() => gv.objects.nodes.size === 0 && gv.objects.edges.size === 0')
+		self.page.locator('#tab-edit').click()
+		self.page.locator('#add-node').click()
+		self.page.wait_for_function('() => gv.objects.nodes.size === 1')
+		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
+
+	def test_autosave_recovery_off_and_undo_grouping(self):
+		self.page.locator('#add-node').click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('1000')")
+		self.page.wait_for_function("() => document.querySelector('#autosave-state').textContent === '브라우저에 저장됨'")
+		self.assertIn('1000', [node['id'] for node in self.drafts()[0]['file']['document']['nodes']])
+		self.page.once('dialog', lambda dialog: dialog.accept())
+		self.page.reload()
+		self.page.wait_for_function("() => document.querySelector('#engine-state').textContent.includes('브라우저 실행')")
+		self.assertTrue(self.page.locator('#recovery-prompt').is_visible())
+		self.assertFalse(self.page.evaluate("gv.objects.nodes.has('1000')"))
+		self.assertIn('1000', [node['id'] for node in self.drafts()[0]['file']['document']['nodes']])
+		self.page.locator('#recovery-restore').click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('1000')")
+		self.assertEqual(self.page.locator('#document-state').inner_text(), '미저장 변경')
+		self.page.locator('#autosave').uncheck()
+		self.page.wait_for_function("() => document.querySelector('#autosave-state').textContent === '자동 저장 꺼짐'")
+		self.assertEqual(self.drafts(), [])
+		self.assertTrue(self.page.evaluate("gv.objects.nodes.has('1000')"))
+		self.page.locator('#autosave').check()
+		self.page.locator('#tab-theme').click()
+		self.page.locator('#theme-form').get_by_text('노드', exact=True).click()
+		field = self.page.locator('#theme-form [data-field="node.fontSize"]')
+		self.page.evaluate("window.undoBefore=(async ()=>(await graphTransport.exchange({op:'web_read'})).result.web.undo_count)()")
+		for value in [17, 18, 19, 20]:
+			field.fill(str(value))
+			self.page.wait_for_timeout(160)
+
+		self.page.locator('#tab-edit').click()
+		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.undo_count === await undoBefore + 1")
+
+	def test_draft_tabs_are_isolated_and_storage_failure_is_nonfatal(self):
+		self.page.locator('#add-node').click()
+		self.page.wait_for_function("() => document.querySelector('#autosave-state').textContent === '브라우저에 저장됨'")
+		first_id = self.page.evaluate("sessionStorage.getItem('gv-draft-id')")
+		other = self.page.context.new_page()
+		try:
+			other.add_init_script("sessionStorage.setItem('gv-draft-id'," + json.dumps(first_id) + ")")
+			other.goto(self.origin)
+			other.wait_for_function("() => document.querySelector('#engine-state').textContent.includes('브라우저 실행')")
+			self.assertNotEqual(other.evaluate("sessionStorage.getItem('gv-draft-id')"), first_id)
+			self.assertTrue(other.locator('#recovery-prompt').is_visible())
+			other.locator('#recovery-discard').click()
+			self.assertEqual(len(self.drafts()), 1)
+			other.locator('#tab-edit').click()
+			other.locator('#add-node').click()
+			other.wait_for_function("() => document.querySelector('#autosave-state').textContent === '브라우저에 저장됨'")
+			self.assertEqual(len(self.drafts()), 2)
+			self.page.locator('#tab-file').click()
+			self.page.locator('#autosave').uncheck()
+			self.page.wait_for_function("() => document.querySelector('#autosave-state').textContent === '자동 저장 꺼짐'")
+			self.assertEqual(len(self.drafts()), 1)
+			self.assertNotEqual(self.drafts()[0]['id'], first_id)
+		finally:
+			other.close()
+
+		self.page.add_init_script("sessionStorage.setItem('gv-autosave','on');indexedDB.open=()=>{throw new DOMException('denied','SecurityError')}")
+		self.page.once('dialog', lambda dialog: dialog.accept())
+		self.page.reload()
+		self.page.wait_for_function("() => document.querySelector('#engine-state').textContent.includes('브라우저 실행')")
+		self.assertIn('사용할 수 없습니다', self.page.locator('#autosave-state').inner_text())
+		self.page.locator('#tab-edit').click()
+		self.page.locator('#add-node').click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('1000')")
+
+	def test_item_search_hidden_scope_and_navigation_do_not_edit_document(self):
+		self.page.locator('#frames [data-id="10"] .disclosure').click()
+		self.page.wait_for_function("() => !gv.objects.nodes.has('2')")
+		before = self.document_file()['document']
+		self.page.locator('#tab-items').click()
+		self.page.locator('#item-search').fill('입력 검증')
+		self.assertEqual(self.page.locator('#item-list .item-row').count(), 1)
+		self.page.evaluate("window.itemButton=document.querySelector('#item-list .item-row button')")
+		self.page.locator('#item-list .item-row button').first.focus()
+		self.page.keyboard.press('Space')
+		self.page.wait_for_function("() => itemButton.getAttribute('aria-pressed')==='true'")
+		self.assertTrue(self.page.evaluate("itemButton===document.querySelector('#item-list .item-row button')"))
+		self.assertTrue(self.page.evaluate('itemButton===document.activeElement'))
+		self.page.locator('#item-list .item-row button').last.click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('9007199254740993') && gv.objects.nodes.get('9007199254740993').visual.selected")
+		self.assertEqual(self.document_file()['document'], before)
+		self.assertIn('처리 파이프라인', self.page.locator('#scope-path').inner_text())
+		self.page.locator('#bookmark-name').fill('검증 위치')
+		self.page.locator('#bookmark-add').click()
+		self.page.wait_for_function("() => document.querySelector('#bookmark-list').textContent.includes('검증 위치')")
+		self.page.locator('#view-back').click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('10') && !gv.objects.nodes.has('2')")
+		self.page.locator('#bookmark-list button').first.click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('9007199254740993')")
+		self.assertEqual(self.document_file()['document'], before)
+
+	def test_direct_connection_reconnect_and_label_drag_undo(self):
+		before = self.state()
+		source = self.page.locator('#nodes [data-id="0"] .shape')
+		source.hover()
+		handle = self.page.locator('#nodes [data-id="0"] .connect-handle').bounding_box()
+		target = self.page.locator('#nodes [data-id="2"] .shape').bounding_box()
+		self.page.mouse.move(handle['x'] + handle['width']/2, handle['y'] + handle['height']/2)
+		self.page.mouse.down()
+		self.page.mouse.move(target['x'] + target['width']/2, target['y'] + target['height']/2, steps=8)
+		self.page.mouse.up()
+		self.page.wait_for_function('count => gv.objects.edges.size === count + 1', arg=len(before['edges']))
+		self.assertEqual(self.state()['undo_count'], before['undo_count'] + 1)
+		self.page.locator('#undo').click()
+		self.page.wait_for_function('count => gv.objects.edges.size === count', arg=len(before['edges']))
+		self.page.locator('#object-picker').select_option('edge:1')
+		self.page.wait_for_function("() => gv.objects.edges.get('1').visual.selected")
+		target = self.page.locator('#nodes [data-id="18446744073709551615"] .shape').bounding_box()
+		handle = self.page.locator('#direct-layer [data-id="1"] .endpoint-target').bounding_box()
+		self.page.mouse.move(handle['x']+handle['width']/2, handle['y']+handle['height']/2)
+		self.page.mouse.down()
+		self.page.mouse.move(target['x']+target['width']/2, target['y']+target['height']/2, steps=6)
+		self.page.mouse.up()
+		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.edges.find(e=>e.id==='1').target === '18446744073709551615'")
+		self.page.locator('#undo').click()
+		self.page.wait_for_function("() => gv.objects.edges.get('1').visual.actualTarget === '2'")
+		self.page.locator('#object-picker').select_option('edge:1')
+		self.page.wait_for_function("() => gv.objects.edges.get('1').visual.selected")
+		label = self.page.locator('#edge-labels [data-id="1"] .label-background').bounding_box()
+		self.page.mouse.move(label['x']+label['width']/2, label['y']+label['height']/2)
+		self.page.mouse.down()
+		self.page.mouse.move(label['x']+label['width']/2+35, label['y']+label['height']/2-40, steps=6)
+		self.page.mouse.up()
+		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.edges.find(e=>e.id==='1').labelPosition !== null")
+		self.page.locator('#undo').click()
+		self.page.wait_for_function("async () => (await graphTransport.exchange({op:'web_read'})).result.web.edges.find(e=>e.id==='1').labelPosition === null")
+		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
+
+	def test_svg_png_options_and_keyboard(self):
+		self.page.locator('#object-picker').select_option('node:0')
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.selected")
+		self.page.locator('#graph').focus()
+		before = self.page.evaluate("gv.objects.nodes.get('0').visual.node.center.x")
+		self.page.keyboard.press('ArrowRight')
+		self.page.wait_for_function("x => gv.objects.nodes.get('0').visual.node.center.x > x", arg=before)
+		self.page.keyboard.press('Control+z')
+		self.page.wait_for_function("x => gv.objects.nodes.get('0').visual.node.center.x === x", arg=before)
+		self.page.keyboard.press('Control+f')
+		self.assertTrue(self.page.locator('#item-search').evaluate('(e)=>e===document.activeElement'))
+		self.page.locator('#tab-file').click()
+		self.page.get_by_text('이미지 출력 옵션', exact=True).click()
+		self.page.locator('#export-area').select_option('selection')
+		self.page.locator('#export-transparent').check()
+		self.page.locator('#export-scale').select_option('2')
+		self.page.locator('#export-toggle').click()
+		with self.page.expect_download() as output:
+			self.page.locator('#export-svg').click()
+
+		svg = output.value.path().read_text(encoding='utf-8')
+		self.assertIn('base64,', svg)
+		self.assertIn('data-id="0"', svg)
+		self.assertNotIn('data-id="2"', svg)
+		self.assertNotIn('direct-handle', svg)
+		self.page.locator('#export-toggle').click()
+		with self.page.expect_download() as output:
+			self.page.locator('#export-image').click()
+
+		content = output.value.path().read_bytes()
+		self.assertEqual(content[:8], b'\x89PNG\r\n\x1a\n')
+		self.assertGreater(int.from_bytes(content[16:20], 'big'), 100)
+		alpha = self.page.evaluate('''async data =>
+		{
+			const image=new Image();image.src='data:image/png;base64,'+data;await image.decode();
+			const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+			const context=canvas.getContext('2d');context.drawImage(image,0,0);
+			return context.getImageData(0,0,1,1).data[3];
+		}''', base64.b64encode(content).decode())
+		self.assertEqual(alpha,0)
+
+	def test_nonfinite_deep_file_and_image_limits_are_rejected(self):
+		file = self.document_file()
+		before = file['document']
+		file['document']['nodes'][0]['style']['fontSize'] = 123456789
+		text = json.dumps(file).replace('123456789','1e999')
+		payload = {'name':'nonfinite.json','mimeType':'application/json','buffer':text.encode()}
+		self.page.locator('#document-open').set_input_files(payload)
+		self.page.wait_for_function("() => document.querySelector('#error').textContent.includes('유한')")
+		self.assertNotEqual(self.document_file()['document']['nodes'][0]['style']['fontSize'],123456789)
+		text = json.dumps(self.document_file())[:-1] + ',"extra":' + '['*130 + '0' + ']'*130 + '}'
+		payload = {'name':'deep.json','mimeType':'application/json','buffer':text.encode()}
+		self.page.locator('#document-open').set_input_files(payload)
+		self.page.wait_for_function("() => document.querySelector('#error').textContent.includes('중첩')")
+		file = self.document_file()
+		node = file['document']['nodes'][0]; node['center']={'x':0,'y':0}; node['size']={'width':9000,'height':72}
+		file['document']['nodes']=[node];file['document']['edges']=[]
+		self.open_document(file,'large-image.json')
+		self.page.wait_for_function("() => gv.objects.nodes.size===1 && gv.objects.nodes.get('0').visual.node.size.width===9000")
+		self.page.locator('#tab-file').click()
+		self.page.locator('#export-toggle').click(); self.page.locator('#export-image').click()
+		self.page.wait_for_function("() => document.querySelector('#error').textContent.includes('8192px')")
+		self.assertTrue(self.page.evaluate('gv.ready'))
+		self.assertEqual(self.document_file()['document']['nodes'][0]['size']['width'],9000)
+
+	def test_dirty_replace_cancel_drop_and_quota_failure_preserves_document(self):
+		file = self.document_file()
+		self.page.locator('#add-node').click()
+		self.page.wait_for_function("() => document.querySelector('#autosave-state').textContent === '브라우저에 저장됨'")
+		self.page.locator('#tab-file').click()
+		self.page.once('dialog', lambda dialog: dialog.dismiss())
+		self.page.locator('#document-new').click()
+		self.assertTrue(self.page.evaluate("gv.objects.nodes.has('1000')"))
+		self.page.evaluate("() => {IDBObjectStore.prototype.put=()=>{throw new DOMException('quota','QuotaExceededError')}}")
+		self.page.locator('#tab-edit').click()
+		self.page.locator('#update-data').click()
+		self.page.wait_for_function("() => gv.objects.nodes.get('2').visual.node.label === '수신 1'")
+		self.page.wait_for_function("() => document.querySelector('#autosave-state').textContent.includes('자동 저장 실패')")
+		self.assertEqual(len(self.drafts()), 1)
+		self.assertTrue(self.page.evaluate("gv.objects.nodes.has('1000')"))
+		file['document']['nodes'][0]['label'] = '드롭으로 열기'
+		self.page.once('dialog', lambda dialog: dialog.accept())
+		self.page.evaluate('''file =>
+		{
+			const transfer = new DataTransfer();
+			transfer.items.add(new File([JSON.stringify(file)],'dropped.json',{type:'application/json'}));
+			document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+		}''', file)
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.node.label === '드롭으로 열기'")
+		self.assertEqual(self.page.locator('#document-name').inner_text(), 'dropped.json')
+
+	def test_concurrent_document_open_is_serialized(self):
+		file = self.document_file()
+		file['document']['nodes'][0]['label'] = '첫 문서'
+		second = json.loads(json.dumps(file)); second['document']['nodes'][0]['label'] = '두 번째 문서'
+		self.page.evaluate('''() =>
+		{
+			const exchange=graphTransport.exchange.bind(graphTransport);
+			let delayed=false;
+			graphTransport.exchange=async request=>
+			{
+				if(request.op==='web_validate'&&!delayed)
+				{
+					delayed=true;await new Promise(resolve=>setTimeout(resolve,150));
+				}
+				return exchange(request);
+			};
+		}''')
+		self.open_document(file,'first.json')
+		self.open_document(second,'second.json')
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.node.label==='첫 문서'")
+		self.assertFalse(self.page.locator('.app-shell').evaluate('(e)=>e.inert'))
+		self.open_document(second,'second.json')
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.node.label==='두 번째 문서'")
+		self.assertEqual(self.page.locator('#document-name').inner_text(),'second.json')
+
+	def test_waypoint_add_drag_cancel_delete_and_undo(self):
+		self.page.locator('#object-picker').select_option('edge:0')
+		self.page.wait_for_function("() => gv.objects.edges.get('0').visual.selected")
+		point = self.page.locator('#edges [data-id="0"] .wire').evaluate('''path =>
+		{
+			const p=path.getPointAtLength(path.getTotalLength()*0.3), r=document.querySelector('#graph').getBoundingClientRect();
+			return {clientX:r.left+gv.camera.x+p.x*gv.camera.zoom,clientY:r.top+gv.camera.y+p.y*gv.camera.zoom};
+		}''')
+		self.page.locator('#edges [data-id="0"] .wire').dispatch_event('dblclick', point)
+		self.page.wait_for_function("() => gv.objects.edges.get('0').visual.waypoints.length === 1")
+		before = self.state()['undo_count']
+		old = self.page.evaluate("gv.objects.edges.get('0').visual.waypoints[0].y")
+		handle = self.page.locator('#edges [data-id="0"] [data-waypoint-index="0"]').bounding_box()
+		x, y = handle['x']+handle['width']/2, handle['y']+handle['height']/2
+		self.page.mouse.move(x,y); self.page.mouse.down(); self.page.mouse.move(x,y-50,steps=6); self.page.mouse.up()
+		self.page.wait_for_function("y => gv.objects.edges.get('0').visual.waypoints[0].y < y", arg=old)
+		self.assertEqual(self.state()['undo_count'], before+1)
+		before_file = self.document_file()['document']
+		handle = self.page.locator('#edges [data-id="0"] [data-waypoint-index="0"]').bounding_box()
+		x, y = handle['x']+handle['width']/2, handle['y']+handle['height']/2
+		self.page.mouse.move(x,y); self.page.mouse.down(); self.page.mouse.move(x+30,y-20,steps=4)
+		self.page.keyboard.press('Escape'); self.page.mouse.up()
+		self.assertEqual(self.document_file()['document'], before_file)
+		self.page.locator('#edges [data-id="0"] [data-waypoint-index="0"]').click(button='right')
+		self.page.wait_for_function("() => gv.objects.edges.get('0').visual.waypoints.length === 0")
+		self.page.locator('#tab-edit').click()
+		self.page.locator('#undo').click()
+		self.page.wait_for_function("() => gv.objects.edges.get('0').visual.waypoints.length === 1")
+
+	def test_collapsed_connection_asks_for_actual_endpoint(self):
+		self.page.locator('#frames [data-id="10"] .disclosure').click()
+		self.page.wait_for_function("() => gv.objects.nodes.has('10')")
+		before = len(self.state()['edges'])
+		self.page.locator('#nodes [data-id="0"] .shape').hover()
+		handle = self.page.locator('#nodes [data-id="0"] .connect-handle').bounding_box()
+		target = self.page.locator('#nodes [data-id="10"] .shape').bounding_box()
+		self.page.mouse.move(handle['x']+handle['width']/2,handle['y']+handle['height']/2)
+		self.page.mouse.down()
+		self.page.mouse.move(target['x']+target['width']/2,target['y']+target['height']/2,steps=6)
+		self.page.mouse.up()
+		dialog = self.page.get_by_role('dialog')
+		dialog.wait_for()
+		dialog.get_by_role('combobox', name='도착 노드').select_option('2')
+		dialog.get_by_role('button', name='연결', exact=True).click()
+		self.page.wait_for_function('''count => gv.objects.edges.size > 2 &&
+			[...gv.objects.edges.values()].some(e=>e.visual.actualSource==='0' && e.visual.actualTarget==='2')''', arg=before)
+		self.assertEqual(len(self.state()['edges']), before+1)
+		edge = next(edge for edge in self.state()['edges'] if edge['source']=='0' and edge['target']=='2')
+		self.assertEqual(self.page.evaluate("id=>gv.objects.edges.get(id).visual.target", edge['id']), '10')
+
+	def test_pinch_and_diagnostics_preserve_document(self):
+		file = self.document_file()
+		before = file['document']
+		zoom = self.page.evaluate('gv.camera.zoom')
+		cdp = self.context.new_cdp_session(self.page)
+		cdp.send('Emulation.setTouchEmulationEnabled', {'enabled': True, 'maxTouchPoints': 2})
+		cdp.send('Input.dispatchTouchEvent', {'type':'touchStart','touchPoints':[{'x':700,'y':800},{'x':900,'y':800}]})
+		cdp.send('Input.dispatchTouchEvent', {'type':'touchMove','touchPoints':[{'x':650,'y':800},{'x':950,'y':800}]})
+		cdp.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
+		self.page.wait_for_function('zoom => gv.camera.zoom > zoom*1.2', arg=zoom)
+		self.assertEqual(self.document_file()['document'], before)
+		cdp.detach()
+		first, last = before['nodes'][0], before['nodes'][-1]
+		first['center'] = {'x':-100,'y':0}; first['size'] = {'width':50,'height':50}
+		last['center'] = {'x':100,'y':0}; last['size'] = {'width':50,'height':50}
+		wall = json.loads(json.dumps(first)); wall['id']='42'; wall['label']='장애물'
+		wall['center']={'x':0,'y':0}; wall['size']={'width':1000,'height':1000}
+		before['nodes']=[first,last,wall]
+		edge = before['edges'][0]; edge['source']=first['id']; edge['target']=last['id']
+		before['edges']=[edge]; before['options']['minimumNodeGap']=0
+		self.open_document(file,'blocked.json')
+		self.page.wait_for_function("() => gv.objects.nodes.has('42')")
+		self.page.locator('#tab-analysis').click()
+		self.page.locator('#diagnostic-list button').first.wait_for()
+		self.assertIn('경로 없음',self.page.locator('#diagnostic-list').inner_text())
+		self.page.locator('#diagnostic-list button').first.click()
+		self.page.wait_for_function("() => gv.objects.edges.get('0').visual.selected")
+		self.assertEqual(self.page.locator('#edges [data-id="0"] .wire').get_attribute('d'), '')
 
 	def test_fullscreen_sidebar_tabs(self):
 		box = self.page.locator('#graph').bounding_box()

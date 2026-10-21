@@ -3,7 +3,7 @@ import type {
 	NodeEntry, EdgeEntry, GraphItem, Query, GraphError, GridOptions
 } from './types.ts';
 import {previewEdge} from './preview.ts';
-import {download, pngImage} from './export.ts';
+import {download, pngImage, svgImage, type ImageOptions} from './export.ts';
 import {defaultFontFamily} from './font.ts';
 export {imageSVG} from './export.ts';
 
@@ -52,6 +52,7 @@ let inputPending = 0;
 let previewFrame: number | undefined;
 const interactionMetrics = {previewFrames: 0, lastPreviewMs: 0,
 	uiRoundTrips: [] as {action: string; queueMs: number; ms: number}[]};
+let diagnosticSignature = '';
 
 if (!document.documentElement.dataset.theme)
 	document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -264,6 +265,8 @@ function updateNode(layer: 'nodes' | 'frames', visual: NodeVisual): void
 	group.dataset.active = String(visual.active);
 	group.dataset.hovered = String(visual.hovered);
 	group.dataset.engaged = String(visual.engaged);
+	group.dataset.selected = String(visual.selected);
+	attrs(group, {tabindex: 0, role: 'group', 'aria-label': `${node.label || '노드'}, ID ${node.id}`});
 	if (gesture?.type === 'drag' && gesture.origins.has(node.id))
 		previewDrag(entry, gesture);
 	else
@@ -355,6 +358,8 @@ function drawEdge(entry: EdgeEntry, visual: EdgeVisual): void
 	entry.group.dataset.actualSource = visual.actualSource;
 	entry.group.dataset.actualTarget = visual.actualTarget;
 	entry.group.dataset.routeStatus = String(visual.status);
+	entry.group.dataset.selected = String(visual.selected);
+	attrs(entry.group, {tabindex: 0, role: 'group', 'aria-label': `${visual.text || '엣지'}, ID ${visual.id}`});
 }
 
 function applyContext(value: Context): void
@@ -407,6 +412,9 @@ function applyDelta(delta: Delta): void
 	}
 	revision = delta.revision;
 	if (ready && visibilityChanged && !gesture) ensureVisible();
+	window.dispatchEvent(new CustomEvent('gv-scene-change', {detail: {visibilityChanged,
+		nodes: [...delta.upserted_frames, ...delta.upserted_nodes].map((visual): string => visual.node.id),
+		edges: delta.upserted_edges.map((visual): string => visual.id)}}));
 }
 
 function setCamera(): void
@@ -780,6 +788,56 @@ svg.addEventListener('wheel', (event) => {
 	camera.zoom = next;
 	setCamera();
 }, {passive: false});
+const touchPoints = new Map<number, Point>();
+let pinch: {distance: number; zoom: number; anchor: Point} | undefined;
+const pinchStart = (): void =>
+{
+	const [a, b] = [...touchPoints.values()];
+	if (!a || !b) return;
+
+	const center = {clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2};
+	pinch = {distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), zoom: camera.zoom, anchor: world(center)};
+};
+svg.addEventListener('pointerdown', (event): void =>
+{
+	if (event.pointerType !== 'touch') return;
+
+	touchPoints.set(event.pointerId, {x: event.clientX, y: event.clientY});
+	if (touchPoints.size < 2) return;
+
+	event.preventDefault(); event.stopImmediatePropagation();
+	window.dispatchEvent(new Event('gv-cancel-direct'));
+	void finishGesture(event, true);
+	svg.setPointerCapture(event.pointerId); pinchStart();
+}, true);
+svg.addEventListener('pointermove', (event): void =>
+{
+	if (!touchPoints.has(event.pointerId)) return;
+
+	touchPoints.set(event.pointerId, {x: event.clientX, y: event.clientY});
+	if (!pinch) return;
+
+	event.preventDefault(); event.stopImmediatePropagation();
+	const [a, b] = [...touchPoints.values()];
+	if (!a || !b) return;
+
+	const bounds = svg.getBoundingClientRect();
+	camera.zoom = Math.max(0.001, Math.min(8, pinch.zoom * Math.hypot(b.x - a.x, b.y - a.y) / pinch.distance));
+	camera.x = (a.x + b.x) / 2 - bounds.left - pinch.anchor.x * camera.zoom;
+	camera.y = (a.y + b.y) / 2 - bounds.top - pinch.anchor.y * camera.zoom;
+	setCamera();
+}, true);
+for (const type of ['pointerup', 'pointercancel'] as const)
+	svg.addEventListener(type, (event): void =>
+	{
+		touchPoints.delete(event.pointerId);
+		if (!pinch) return;
+
+		event.preventDefault(); event.stopImmediatePropagation();
+		if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+		if (!touchPoints.size) pinch = undefined;
+	}, true);
+window.addEventListener('blur', (): void => {touchPoints.clear(); pinch = undefined;});
 let hoverPending = false;
 let hoverPoint: Point | null | undefined;
 let hoverTimer: ReturnType<typeof setTimeout> | undefined;
@@ -891,11 +949,11 @@ document.addEventListener
 	}
 );
 
-async function exportFile(kind: 'image' | 'graph'): Promise<void>
+async function exportFile(kind: 'image' | 'graph' | 'svg'): Promise<void>
 {
 	closeExportMenu();
 	if (stopped || !ready) return;
-	if (gesture || inputPending) throw new Error('편집을 마친 뒤 출력하세요.');
+	if (gesture || inputPending || document.body.dataset.directEditing === 'true') throw new Error('편집을 마친 뒤 출력하세요.');
 	await window.graphTransport?.beforeExport?.();
 	await syncView('poll', {view_id: viewId});
 
@@ -904,10 +962,15 @@ async function exportFile(kind: 'image' | 'graph'): Promise<void>
 	byId('error').textContent = '';
 	try
 	{
-		const content = kind === 'image' ? await pngImage(svg)
+		const options: ImageOptions = {scale: Number(byId<HTMLSelectElement>('export-scale').value),
+			transparent: byId<HTMLInputElement>('export-transparent').checked,
+			area: byId<HTMLSelectElement>('export-area').value as ImageOptions['area']};
+		const content = kind === 'image' ? await pngImage(svg, options) : kind === 'svg' ? (await svgImage(svg, options)).blob
 			: new Blob([JSON.stringify((await api<{file: JsonObject}>('export')).file, null, '\t') + '\n'],
 				{type: 'application/json;charset=utf-8'});
-		await download(`graph.${kind === 'image' ? 'png' : 'json'}`, content, window.graphTransport);
+		await download(`graph.${kind === 'image' ? 'png' : kind === 'svg' ? 'svg' : 'json'}`, content, window.graphTransport);
+		if (kind === 'graph')
+			window.dispatchEvent(new CustomEvent('gv-document-saved', {detail: JSON.parse(await content.text())}));
 	}
 	finally
 	{
@@ -915,6 +978,7 @@ async function exportFile(kind: 'image' | 'graph'): Promise<void>
 	}
 }
 byId('export-image').onclick = (): void => {void exportFile('image').catch(errorMessage);};
+byId('export-svg').onclick = (): void => {void exportFile('svg').catch(errorMessage);};
 byId('export-graph').onclick = (): void => {void exportFile('graph').catch(errorMessage);};
 
 async function snapshot(): Promise<void>
@@ -956,6 +1020,7 @@ async function loadSnapshot(): Promise<void>
 	documentRevision = state.document_revision;
 	renderedDocumentRevision = documentRevision;
 	applyOptions(state.options);
+	window.dispatchEvent(new Event('gv-scene-change'));
 	// The next poll/UI request acknowledges this scene without delaying the first fit/paint.
 }
 
@@ -1000,7 +1065,25 @@ function applyUpdate(state: ViewState): void
 
 	if (state.pulse) pulse.accept(state.pulse.event_id, state.pulse.active);
 	const failures = state.routing_failures?.length ?? 0;
-	byId('route-status').textContent = failures ? `경로를 찾지 못한 연결 ${failures}개 · 노드 간격을 조정하세요.` : '';
+	byId('route-status').textContent = failures ? `경로를 찾지 못한 엣지 ${failures}개` : '';
+	const signature = JSON.stringify([state.routing_failures ?? [], state.label_overlaps ?? []]);
+	if (signature !== diagnosticSignature)
+	{
+		diagnosticSignature = signature;
+		const list = byId('diagnostic-list'); list.replaceChildren();
+		const entries = [...(state.routing_failures ?? []).map((item) => ({id: item.id,
+			text: item.status === 3 ? '탐색 한도 초과' : '경로 없음'})),
+			...(state.label_overlaps ?? []).map((id) => ({id, text: '라벨 겹침'}))];
+		for (const item of entries)
+		{
+			const button = document.createElement('button'); button.textContent = `${item.text} · 엣지 ${item.id} · 위치 찾기`;
+			button.onclick = (): void =>
+			{
+				window.dispatchEvent(new CustomEvent('gv-locate', {detail: {kind: 'edge', id: item.id}}));
+			};
+			list.append(button);
+		}
+	}
 	byId('connection').textContent = `문서 ${documentRevision} · 렌더 ${revision}`;
 	if (!byId('inspector').hasAttribute('hidden'))
 		byId('status').textContent = JSON.stringify({routing_failures: state.routing_failures,
@@ -1056,6 +1139,13 @@ const pulseTimer = setInterval(() => byId('pulse').classList.toggle('on', pulse.
 window.addEventListener('gv-core-update', (): void => {if (ready && !stopped) schedulePoll(0);});
 const debug = {graphId, objects, metrics, interactionMetrics, api, enqueue, fit, zoomBy, Pulse, pulse,
 	inspect,
+	setView: (value: Camera): void =>
+	{
+		if (![value.x, value.y, value.zoom].every(Number.isFinite) || value.zoom <= 0) throw new Error('잘못된 카메라입니다.');
+
+		camera = {...value}; setCamera();
+	},
+	get editing() {return Boolean(gesture || inputPending || document.body.dataset.directEditing === 'true');},
 	sync: async (): Promise<ViewState> => syncView('poll', {view_id: viewId}),
 	get revision() {return revision;}, get documentRevision() {return documentRevision;}, get camera() {return camera;},
 	get acknowledgedDocumentRevision() {return acknowledgedDocumentRevision;},

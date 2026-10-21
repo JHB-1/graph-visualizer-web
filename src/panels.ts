@@ -496,6 +496,15 @@ export async function startPanels(core: BrowserCore, report: (error: unknown) =>
 		byId<HTMLInputElement>('history-limit').value = String(state.undo_limit);
 	};
 	window.addEventListener('gv-form-idle', (): void => {render();});
+	window.addEventListener('gv-document-opened', (): void =>
+	{
+		item = null;
+		steps = [];
+		byId('algorithm-result').textContent = '분석을 실행하세요.';
+		byId<HTMLInputElement>('algorithm-step').disabled = true;
+		byId('algorithm-description').textContent = '';
+		void refresh().catch(report);
+	});
 	for (const action of ['undo', 'redo'])
 		byId(action).onclick = (): void =>
 		{
