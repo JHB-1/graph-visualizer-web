@@ -1137,7 +1137,8 @@ async function poll(): Promise<void>
 }
 const pulseTimer = setInterval(() => byId('pulse').classList.toggle('on', pulse.active), 60);
 window.addEventListener('gv-core-update', (): void => {if (ready && !stopped) schedulePoll(0);});
-const debug = {graphId, objects, metrics, interactionMetrics, api, enqueue, fit, zoomBy, Pulse, pulse,
+const debug = {get graphId() {return window.graphTransport?.graphId ?? graphId;}, objects, metrics, interactionMetrics,
+	api, enqueue, fit, zoomBy, Pulse, pulse,
 	inspect,
 	setView: (value: Camera): void =>
 	{
