@@ -7,6 +7,16 @@ interface NativeReply
 	snapshot?: Scene;
 }
 
+export type WorkspaceCore = Pick<BrowserCore, 'graphId' | 'exchange' | 'request' | 'update' | 'beforeExport' | 'downloadFile'>;
+export interface WorkspaceHost
+{
+	core: WorkspaceCore;
+	name: string;
+	status: string;
+	drafts?: Pick<import('./drafts.ts').Drafts, 'id' | 'open' | 'latest' | 'save' | 'remove' | 'clear'>;
+}
+declare global {interface Window {graphWorkspace?: WorkspaceHost}}
+
 export class BrowserCore implements GraphTransport
 {
 	readonly graphId = 'browser-session';

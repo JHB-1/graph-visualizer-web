@@ -1,4 +1,4 @@
-import type {BrowserCore} from './transport.ts';
+import type {WorkspaceCore} from './transport.ts';
 import type {Node, Point} from './renderer/types.ts';
 import {flushStyles} from './panels.ts';
 
@@ -18,12 +18,12 @@ export interface WorkspaceState
 interface View {scope: string | null; camera: {x: number; y: number; zoom: number}}
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 
-export async function readWorkspace(core: BrowserCore): Promise<WorkspaceState>
+export async function readWorkspace(core: WorkspaceCore): Promise<WorkspaceState>
 {
 	return (await core.exchange({op: 'web_read'})).result.web as unknown as WorkspaceState;
 }
 
-export async function startExplorer(core: BrowserCore, report: (error: unknown) => void): Promise<void>
+export async function startExplorer(core: WorkspaceCore, report: (error: unknown) => void): Promise<void>
 {
 	let state = await readWorkspace(core);
 	let limit = 200;

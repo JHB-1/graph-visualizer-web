@@ -1,4 +1,4 @@
-import type {BrowserCore} from './transport.ts';
+import type {WorkspaceCore} from './transport.ts';
 import type {JsonObject} from './renderer/types.ts';
 import {Drafts, type Draft} from './drafts.ts';
 import {flushStyles, selectTab} from './panels.ts';
@@ -30,9 +30,10 @@ export function checkFile(value: unknown): JsonObject
 	return file;
 }
 
-export async function startDocuments(core: BrowserCore, report: (error: unknown) => void, initialName = '새 문서'): Promise<void>
+export async function startDocuments(core: WorkspaceCore, report: (error: unknown) => void, initialName = '새 문서'): Promise<void>
 {
-	const drafts = new Drafts();
+	const drafts = window.graphWorkspace?.drafts ?? new Drafts();
+	const storageHint = window.graphWorkspace?.drafts ? '변경 시 이 기기에 자동 저장됩니다.' : '변경 시 브라우저에 자동 저장됩니다.';
 	const checkpointFile = async (): Promise<JsonObject> =>
 		(await core.exchange({op: 'web_checkpoint'})).result.file as JsonObject;
 	const initial = await checkpointFile();
@@ -52,7 +53,7 @@ export async function startDocuments(core: BrowserCore, report: (error: unknown)
 	let updatingAutosave = false;
 	let allowLeave = false;
 	let saving: Promise<void> = Promise.resolve();
-	let storageState = '변경 시 브라우저에 자동 저장됩니다.';
+	let storageState = storageHint;
 	try {enabled = sessionStorage.getItem('gv-autosave') !== 'off';}
 	catch {storageState = '브라우저 설정 저장을 사용할 수 없습니다.';}
 
@@ -88,7 +89,7 @@ export async function startDocuments(core: BrowserCore, report: (error: unknown)
 				storageState = '저장 중…';
 				render();
 				await drafts.save({name, file, dirty: dirty()});
-				storageState = '브라우저에 저장됨';
+				storageState = window.graphWorkspace?.drafts ? '이 기기에 저장됨' : '브라우저에 저장됨';
 			}
 			while (again);
 		}
@@ -143,7 +144,7 @@ export async function startDocuments(core: BrowserCore, report: (error: unknown)
 			byId('error').textContent = '';
 			window.dispatchEvent(new Event('gv-document-opened'));
 			window.gv!.fit();
-			storageState = '변경 시 브라우저에 자동 저장됩니다.';
+			storageState = storageHint;
 			accepted = true;
 		}
 		finally
@@ -242,7 +243,7 @@ export async function startDocuments(core: BrowserCore, report: (error: unknown)
 	};
 	byId('draft-clear').onclick = (): void =>
 	{
-		if (!confirm('이 제품의 브라우저 복구 기록을 지울까요? 현재 문서는 유지됩니다.')) return;
+		if (!confirm('이 제품의 로컬 복구 기록을 지울까요? 현재 문서는 유지됩니다.')) return;
 
 		safe(async (): Promise<void> =>
 		{

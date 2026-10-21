@@ -1,8 +1,8 @@
-import type {BrowserCore} from './transport.ts';
+import type {WorkspaceCore} from './transport.ts';
 import {readWorkspace} from './explorer.ts';
 import {flushStyles, selectTab} from './panels.ts';
 
-export function startCommands(core: BrowserCore, report: (error: unknown) => void): void
+export function startCommands(core: WorkspaceCore, report: (error: unknown) => void): void
 {
 	let operations: Promise<void> = Promise.resolve();
 	let generation = 0;

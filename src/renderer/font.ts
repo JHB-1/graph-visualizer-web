@@ -7,6 +7,13 @@ export async function readyDefaultFont(): Promise<void>
 
 let embeddedFont: Promise<string> | undefined;
 
+export function setDefaultFontData(data: string): void
+{
+	if (!data.startsWith('data:font/woff2;base64,')) throw new Error('잘못된 기본 글꼴 데이터입니다.');
+
+	embeddedFont = Promise.resolve(data);
+}
+
 // 독립 SVG 이미지에서는 페이지 글꼴을 재사용하지 않으므로 PNG 출력에 글꼴 포함
 export function defaultFontData(): Promise<string>
 {

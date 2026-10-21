@@ -1,4 +1,4 @@
-import type {BrowserCore} from './transport.ts';
+import type {WorkspaceCore} from './transport.ts';
 import type {JsonObject, Color} from './renderer/types.ts';
 
 type Data = Record<string, unknown>;
@@ -351,7 +351,7 @@ function form(id: string, data: Data, submit: (value: Data) => Promise<void>, re
 	};
 }
 
-export async function startPanels(core: BrowserCore, report: (error: unknown) => void): Promise<void>
+export async function startPanels(core: WorkspaceCore, report: (error: unknown) => void): Promise<void>
 {
 	core.beforeExport = flushStyles;
 	let state: State;

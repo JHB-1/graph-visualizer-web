@@ -86,3 +86,16 @@ SIL OFL 1.1 원문을 `public/licenses/Pretendard-LICENSE.txt`로 함께 배포�
 
 UI 형식과 흐름은 공유하지만 GV의 노드/엣지/그룹과 FGV의 행/셀/샘플을 같은 데이터 모델로 바꾸지 않는다.
 원본 수학/그래프 계산은 각 코어를 사용하며 Web/Plugin/Desktop의 문서/Undo 사본을 새로 만들지 않는다.
+
+## Plugin/Desktop 호스트 경계
+
+- `window.graphWorkspace`가 없으면 기존 브라우저 Worker/WASM 세션 생성
+- 호스트가 `core`, `name`, `status`를 주입하면 같은 패널/탐색/파일/렌더러 모듈로 기존 공유 세션 연결
+- WorkspaceCore는 `exchange`, `request`, `update`, `downloadFile`, `beforeExport`, 원본 `graphId` 제공
+- 플러그인은 공식 MCP Apps 브리지로만 통신, 별도 WASM/로컬 그래프/Undo 사본 생성 금지
+- 호스트의 제한된 `drafts` 어댑터가 있으면 복구만 호스트에 보관, 임의 파일 경로/셸 API 제공 금지
+- 파일 출력은 공식 호스트 다운로드 기능 사용, 미지원이면 오류 안내
+- 기본 글꼴은 호스트가 자체 포함 WOFF2를 제공 가능, 외부 글꼴 서비스 연결 불필요
+- 플러그인 파일 교체는 같은 공유 세션 전체 변경, 문서 revision 단조 증가와 다른 뷰 재동기화 유지
+- 로컬 앱은 해시 고정 웹 번들과 WASM을 오프라인 재사용, Node 통합/외부 탐색/권한 차단 유지
+- 카메라/탐색/북마크는 뷰별 상태, 에이전트 갱신과 사람 편집은 같은 네이티브 세션의 revision 사용

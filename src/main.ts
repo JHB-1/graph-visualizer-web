@@ -23,31 +23,43 @@ selection.onchange = (): void =>
 	url.searchParams.set('sample', selection.value);
 	location.assign(url);
 };
-document.documentElement.dataset.theme = localStorage.getItem('gv-theme') ??
-	'dark';
+let preferredTheme = window.graphWorkspace ? document.documentElement.dataset.theme : 'dark';
+try {preferredTheme = localStorage.getItem('gv-theme') ?? preferredTheme;}
+catch { /* 샌드박스에서는 호스트 밝기 유지 */ }
+
+document.documentElement.dataset.theme = preferredTheme ?? 'dark';
 document.getElementById('theme')!.onclick = (): void =>
 {
 	const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
 	document.documentElement.dataset.theme = theme;
-	localStorage.setItem('gv-theme', theme);
+	try {localStorage.setItem('gv-theme', theme);}
+	catch { /* 현재 뷰 밝기는 유지 */ }
 };
 
 try
 {
-	const core = new BrowserCore();
-	await Promise.all([core.exchange({op: 'create', changes: sample.changes, options: sample.options}), readyDefaultFont()]);
+	const host = window.graphWorkspace;
+	const core = host?.core ?? new BrowserCore();
+	await readyDefaultFont();
+	if (!host) await core.exchange({op: 'create', changes: sample.changes, options: sample.options});
 	window.graphTransport = core;
 	await import('./renderer/app.ts');
 	if (!window.gv?.ready) throw new Error('렌더러를 시작하지 못했습니다.');
 	await startPanels(core, report);
-	await startDocuments(core, report, sample.name);
+	await startDocuments(core, report, host?.name ?? sample.name);
 	await startExplorer(core, report);
 	startDirectEditing(core, report);
 	startCommands(core, report);
 
-	document.getElementById('engine-state')!.textContent = 'C++ 코어 · 브라우저 실행';
+	document.getElementById('engine-state')!.textContent = host?.status ?? 'C++ 코어 · 브라우저 실행';
 	document.getElementById('engine-state')!.classList.add('ready');
 	for (const button of document.querySelectorAll<HTMLButtonElement>('[data-engine]')) button.disabled = false;
+	if (host)
+	{
+		selection.disabled = true;
+		document.getElementById('sample-description')!.textContent = host.name;
+		document.getElementById('update-data')!.hidden = true;
+	}
 	document.getElementById('zoom-in')!.onclick = (): void => {window.gv?.zoomBy(1.3);};
 	document.getElementById('zoom-out')!.onclick = (): void => {window.gv?.zoomBy(1 / 1.3);};
 	let updates = 0;
@@ -104,7 +116,8 @@ try
 			await core.update({updated_edges: (reply.items as {id: string}[]).map((edge) => ({id: edge.id, routing}))});
 		});
 	};
-	(document.getElementById('avoid') as HTMLInputElement).checked = true;
+	const options = (await core.exchange({op: 'status'})).result.options as {obstacleAvoidance: boolean};
+	(document.getElementById('avoid') as HTMLInputElement).checked = options.obstacleAvoidance;
 	document.getElementById('avoid')!.onchange = (event): void =>
 	{
 		void window.gv!.enqueue({action: 'options', options: {obstacleAvoidance: (event.target as HTMLInputElement).checked}}).catch(report);

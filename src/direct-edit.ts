@@ -1,4 +1,4 @@
-import type {BrowserCore} from './transport.ts';
+import type {WorkspaceCore} from './transport.ts';
 import type {Point, JsonObject, NodeEntry, EdgeEntry} from './renderer/types.ts';
 import {flushStyles} from './panels.ts';
 import type {WorkspaceState} from './explorer.ts';
@@ -10,7 +10,7 @@ interface Edit
 	pointer: number; revision: string; ready: Promise<WorkspaceState>; element?: Element; preview?: SVGLineElement; anchor?: Point;
 }
 
-export function startDirectEditing(core: BrowserCore, report: (error: unknown) => void): void
+export function startDirectEditing(core: WorkspaceCore, report: (error: unknown) => void): void
 {
 	const svg = document.getElementById('graph') as unknown as SVGSVGElement;
 	let edit: Edit | undefined;
