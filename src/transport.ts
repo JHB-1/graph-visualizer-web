@@ -15,11 +15,11 @@ export interface WorkspaceHost
 	status: string;
 	drafts?: Pick<import('./drafts.ts').Drafts, 'id' | 'open' | 'latest' | 'save' | 'remove' | 'clear'>;
 }
-declare global {interface Window {graphWorkspace?: WorkspaceHost}}
+declare global {interface Window {graphWorkspace?: WorkspaceHost; graphTransport?: GraphTransport}}
 
 export class BrowserCore implements GraphTransport
 {
-	readonly graphId = 'browser-session';
+	readonly graphId: string = 'browser-session';
 	beforeExport?: () => Promise<void>;
 	private worker = new Worker(new URL('engine-worker.js', document.baseURI), {type: 'module'});
 	private sequence = 0;
