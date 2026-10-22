@@ -6,6 +6,7 @@ import {startDocuments} from './documents.ts';
 import {startExplorer} from './explorer.ts';
 import {startDirectEditing} from './direct-edit.ts';
 import {startCommands} from './commands.ts';
+import {startWebUpdates} from './updates.ts';
 
 const report = (error: unknown): void =>
 {
@@ -50,6 +51,7 @@ try
 	await startExplorer(core, report);
 	startDirectEditing(core, report);
 	startCommands(core, report);
+	startWebUpdates(core);
 
 	document.getElementById('engine-state')!.textContent = host?.status ?? 'C++ 코어 · 브라우저 실행';
 	document.getElementById('engine-state')!.classList.add('ready');

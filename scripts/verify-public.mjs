@@ -40,6 +40,7 @@ async function inspect(directory, relative = '')
 			const allowedAsset = new RegExp
 			(
 				'^(index\\.html|style\\.css|app\\.js|engine-worker\\.js|build\\.json|favicon\\.svg|\\.nojekyll|' +
+				'update-manifest\\.json|update-worker\\.js|' +
 				'licenses/.+|wasm/gv-core\\.(mjs|wasm)|fonts/PretendardVariable\\.woff2)$'
 			);
 			if (!allowedAsset.test(name))

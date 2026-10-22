@@ -127,4 +127,8 @@ main#workspace, main#workspace.details-open {position: relative; display: block;
 .endpoint-dialog label {display: block; margin: 12px 0;}
 .endpoint-dialog::backdrop {background: #0007;}
 .export-measure {position: fixed; visibility: hidden; pointer-events: none;}
+.update-notice {position: absolute; z-index: 4; right: 16px; bottom: 16px; max-width: min(420px, calc(100% - 32px));
+	padding: 12px; border: 1px solid var(--gv-border); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 16px #0003;}
+.update-notice[hidden] {display: none;}
+.update-notice button {margin: 8px 0 0 8px;}
 .visual:focus-visible {outline: 2px solid var(--workspace-accent); outline-offset: 3px;}
