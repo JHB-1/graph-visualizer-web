@@ -1,56 +1,72 @@
-name: Validate and deploy Pages
-
+name: Pooled web validation and Pages
+run-name: ${{ inputs.pool_title }}
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-
+    inputs:
+      pool_title:
+        type: string
+        required: false
+      pool_runner:
+        required: true
+      pool_request:
+        required: true
+      pool_sha:
+        required: true
+      pool_profile:
+        type: choice
+        options: [linux]
+        required: true
 permissions:
   contents: read
-
-concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - run: npm install --global pnpm@11.25.0
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm typecheck
-      - run: pnpm build
-      - run: pnpm verify
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: python -m pip install -r requirements-test.txt
-      - run: python -m playwright install --with-deps chromium
-      - run: python tests/browser_test.py
-      - run: python tests/update_test.py
-      - uses: actions/upload-pages-artifact@v4
-        if: github.event_name != 'pull_request'
-        with:
-          path: dist
-
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: validate
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ${{ fromJSON(inputs.pool_runner) }}
+    timeout-minutes: 40
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy
+      - name: pool/${{ inputs.pool_request }}/${{ inputs.pool_profile }}/${{ inputs.pool_sha }}
+        env:
+          POOL_REQUEST: ${{ inputs.pool_request }}
+          POOL_SHA: ${{ inputs.pool_sha }}
+          POOL_PROFILE: ${{ inputs.pool_profile }}
+        run: |
+          printf 'Repository: %s\nCommit: %s\nProfile: %s\nRequest: %s\n' \
+            "$GITHUB_REPOSITORY" "$POOL_SHA" "$POOL_PROFILE" "$POOL_REQUEST" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.pool_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install user-writable pnpm
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/pnpm" pnpm@11.25.0
+          echo "$RUNNER_TEMP/pnpm/bin" >> "$GITHUB_PATH"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm verify
+      - uses: actions/setup-python@v6
+        if: runner.environment != 'self-hosted'
+        with:
+          python-version: '3.12'
+      - name: Prepare isolated browser tests
+        run: |
+          python3 -m venv .venv-ci
+          .venv-ci/bin/python -m pip install -r requirements-test.txt
+          .venv-ci/bin/python -m playwright install chromium
+      - run: .venv-ci/bin/python tests/browser_test.py
+      - run: .venv-ci/bin/python tests/update_test.py
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+      - name: Deploy verified Pages
         id: deployment
         uses: actions/deploy-pages@v4
