@@ -5,6 +5,7 @@ import type {
 import {previewEdge} from './preview.ts';
 import {download, pngImage, svgImage, type ImageOptions} from './export.ts';
 import {defaultFontFamily} from './font.ts';
+import {drawText, nearestPoint} from './text.ts';
 export {imageSVG} from './export.ts';
 
 type Attributes = Record<string, string | number | boolean>;
@@ -183,6 +184,10 @@ function createNode(layer: 'nodes' | 'frames', id: string): SVGGElement
 	const toggle = element('g', group, {class: 'disclosure', role: 'button', tabindex: 0});
 	element('rect', toggle, {width: 22, height: 22, rx: 5});
 	element('path', toggle, {fill: 'none'});
+	const clip = element('clipPath', element('defs', group), {id: `gv-text-${viewId}-${id}`});
+	element('rect', clip);
+	element('ellipse', clip);
+	element('title', group);
 
 	return group;
 }
@@ -236,13 +241,8 @@ function updateNode(layer: 'nodes' | 'frames', visual: NodeVisual): void
 	for (const shape of [rect, circle])
 		attrs(shape, {fill: nodeColor(visual, 'fill'), stroke: nodeColor(visual, 'borderColor'), 'stroke-width': style.borderWidth});
 
-	attrs(text, {
-		x: visual.textBounds.x + visual.textBounds.width / 2,
-		y: layer === 'frames' ? y - h / 2 + style.fontSize + style.padding.top
-			: visual.textBounds.y + visual.textBounds.height / 2
-	});
-	text.textContent = node.label;
 	font(text, style, nodeColor(visual, 'textColor'));
+	nodeText(group, visual, visual.textBounds, layer === 'frames');
 	const decorated = visual.engaged || visual.selected || visual.active || visual.highlighted;
 	const decoration = canvasColor(visual.engaged || visual.selected ? 'selection' : visual.active ? 'connectionTarget' : 'highlight');
 	attrs(outline, {
@@ -274,6 +274,21 @@ function updateNode(layer: 'nodes' | 'frames', visual: NodeVisual): void
 	if (gesture?.type === 'resize' && gesture.id === node.id && gesture.resizePoint) previewResize(gesture);
 
 	metrics.upserts[layer] += 1;
+}
+
+function nodeText(group: SVGGElement, visual: NodeVisual, area: NodeVisual['textBounds'], frame: boolean): void
+{
+	const text = group.children[2] as SVGTextElement;
+	const region = {...area, width: Math.max(0, area.width), height: Math.max(0, area.height)};
+	if (frame) region.height = Math.min(region.height, visual.style.fontSize * 1.5);
+	const clip = group.querySelector('clipPath')!;
+	const circular = visual.style.shape === 0 && !frame;
+	attrs(clip.children[0], {...region, display: circular ? 'none' : 'inline'});
+	attrs(clip.children[1], {cx: region.x + region.width / 2, cy: region.y + region.height / 2,
+		rx: region.width / 2, ry: region.height / 2, display: circular ? 'inline' : 'none'});
+	attrs(text, {'clip-path': `url(#${clip.id})`, 'aria-label': visual.node.label});
+	drawText(text, visual.node.label, region);
+	group.querySelector('title')!.textContent = visual.node.label;
 }
 
 function pathData(visual: EdgeVisual): string
@@ -311,6 +326,12 @@ function updateEdge(visual: EdgeVisual): void
 		element('rect', label, {class: 'label-background', rx: 3});
 		element('text', label, {'text-anchor': 'middle', 'dominant-baseline': 'middle'});
 		element('rect', label, {class: 'label-bounds', fill: 'none', 'pointer-events': 'none'});
+		element('path', group, {class: 'label-leader', fill: 'none', 'pointer-events': 'none'});
+		element('title', label);
+		for (const event of ['pointerenter', 'focusin'])
+			label.addEventListener(event, (): void => {group.classList.add('label-related');});
+		for (const event of ['pointerleave', 'focusout'])
+			label.addEventListener(event, (): void => {group.classList.remove('label-related');});
 		entry = {group, label, visual};
 		objects.edges.set(visual.id, entry);
 	}
@@ -331,8 +352,8 @@ function drawEdge(entry: EdgeEntry, visual: EdgeVisual): void
 	attrs(path, {d: route, stroke: color(stroke), 'stroke-width': style.width});
 	attrs(arrow, {points: routed ? visual.arrow.map((point) => `${point.x},${point.y}`).join(' ') : '', fill: color(stroke)});
 	attrs(text, {x: visual.labelAnchor.x, y: visual.labelAnchor.y, display: routed ? 'inline' : 'none'});
-	text.textContent = visual.text;
 	font(text, style, style.textColor ?? style.color);
+	drawText(text as SVGTextElement, visual.text, visual.labelBounds, false);
 	attrs(entry.label, {display: routed && visual.text !== '' ? 'inline' : 'none'});
 	// 실제 글리프 범위까지 덮는 배경판, 별도 레이어로 다른 엣지의 글자 관통 방지
 	const measured = (text as SVGGraphicsElement).getBBox();
@@ -341,7 +362,25 @@ function drawEdge(entry: EdgeEntry, visual: EdgeVisual): void
 	attrs(background, {x: left - 4, y: top - 2,
 		width: Math.max(measured.x + measured.width, visual.labelBounds.x + visual.labelBounds.width) - left + 8,
 		height: Math.max(measured.y + measured.height, visual.labelBounds.y + visual.labelBounds.height) - top + 4,
-		fill: canvasColor('background'), stroke: 'none'});
+		fill: canvasColor('background'), stroke: color(style.color), 'stroke-width': 0.75});
+	const ownerName = (id: string): string =>
+		`${(objects.nodes.get(id) ?? objects.frames.get(id))?.visual.node.label.replace(/\r?\n/g, ' ') || '노드'} [${id}]`;
+	const owner = `${ownerName(visual.actualSource)} → ${ownerName(visual.actualTarget)}`;
+	attrs(entry.label, {tabindex: 0, role: 'group', 'aria-label': `엣지 ${visual.id}, ${owner}: ${visual.text}`,
+		'data-source': visual.source, 'data-target': visual.target, 'data-owner-edge': visual.id});
+	entry.label.querySelector('title')!.textContent = `엣지 ${visual.id}: ${owner}\n${visual.text}`;
+	const anchor = nearestPoint(visual.path, visual.labelAnchor);
+	const dx = anchor.x - visual.labelAnchor.x;
+	const dy = anchor.y - visual.labelAnchor.y;
+	const halfWidth = Number(background.getAttribute('width')) / 2;
+	const halfHeight = Number(background.getAttribute('height')) / 2;
+	const fraction = Math.min(dx ? halfWidth / Math.abs(dx) : Infinity, dy ? halfHeight / Math.abs(dy) : Infinity);
+	const endpoint = {x: visual.labelAnchor.x + dx * fraction, y: visual.labelAnchor.y + dy * fraction};
+	attrs(entry.group.querySelector('.label-leader')!, {
+		d: fraction < 1 ? `M ${anchor.x} ${anchor.y} L ${endpoint.x} ${endpoint.y}` : '', stroke: color(style.color),
+		'stroke-width': 1, 'stroke-dasharray': '4 3',
+		display: routed && fraction < 1 && Math.hypot(anchor.x - endpoint.x, anchor.y - endpoint.y) > 6 ? 'inline' : 'none'
+	});
 	attrs(bounds, {
 		...visual.labelBounds, stroke: color(context.canvas.highlight),
 		display: routed && visual.labelStatus === 1 ? 'inline' : 'none'
@@ -421,8 +460,34 @@ function setCamera(): void
 {
 	attrs(byId('camera'), {transform: `translate(${camera.x},${camera.y}) scale(${camera.zoom})`});
 	updateGrid(gridSpacing);
-	byId('zoom-level').textContent = `${Number((camera.zoom * 100).toFixed(2))}%`;
+	const zoom = byId<HTMLInputElement>('zoom-level');
+	if (document.activeElement !== zoom) zoom.value = `${Number((camera.zoom * 100).toFixed(2))}%`;
 }
+
+const zoomInput = byId<HTMLInputElement>('zoom-level');
+const zoomError = '줌 배율은 0.1%에서 800% 사이의 숫자로 입력하세요.';
+zoomInput.addEventListener('focus', (): void => {zoomInput.select();});
+zoomInput.addEventListener('keydown', (event): void =>
+{
+	if (event.key === 'Escape') {event.preventDefault(); zoomInput.value = `${camera.zoom * 100}%`; zoomInput.blur();}
+	if (event.key === 'Enter') {event.preventDefault(); zoomInput.blur();}
+});
+zoomInput.addEventListener('blur', (): void =>
+{
+	const raw = zoomInput.value.trim().replace(/%$/, '').trim();
+	const percent = Number(raw);
+	if (!raw || !Number.isFinite(percent) || percent < 0.1 || 800 < percent)
+	{
+		zoomInput.value = `${Number((camera.zoom * 100).toFixed(2))}%`;
+		zoomInput.setAttribute('aria-invalid', 'true');
+		errorMessage(new Error(zoomError));
+		return;
+	}
+
+	zoomInput.removeAttribute('aria-invalid');
+	if (byId('error').textContent?.endsWith(zoomError)) byId('error').textContent = '';
+	zoomBy(percent / 100 / camera.zoom);
+});
 
 function zoomBy(factor: number): void
 {
@@ -602,7 +667,8 @@ function previewResize(current: EditGesture): void
 	attrs(rect, {x, y, width, height});
 	attrs(circle, {cx: x + width / 2, cy: y + height / 2, rx: width / 2, ry: height / 2});
 	const padding = current.initial.style.padding;
-	attrs(text, {x: x + (width + padding.left - padding.right) / 2, y: y + (height + padding.top - padding.bottom) / 2});
+	nodeText(current.group, current.initial, {x: x + padding.left, y: y + padding.top,
+		width: width - padding.left - padding.right, height: height - padding.top - padding.bottom}, false);
 	attrs(current.group.querySelector('.outline')!, {x: x - 3, y: y - 3, width: width + 6, height: height + 6});
 	attrs(current.group.querySelector('.resize')!, {x: x + width - 5, y: y + height - 5});
 }

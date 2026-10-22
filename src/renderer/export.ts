@@ -20,7 +20,7 @@ export function imageSVG(source: SVGSVGElement, options: ImageOptions = {}): {te
 	}
 
 	// 편집 장식과 격자 제외, 현재 scope의 전체 그래프를 카메라와 독립적으로 출력
-	const decorations = '#grid-area, #direct-layer, defs, .outline, .resize, .disclosure, ' +
+	const decorations = '#grid-area, #direct-layer, :scope > defs, .outline, .resize, .disclosure, ' +
 		'.waypoints, .label-bounds, .direct-handle, .direct-preview';
 	copy.querySelectorAll(decorations).forEach
 	(

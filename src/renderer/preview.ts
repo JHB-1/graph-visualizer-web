@@ -57,7 +57,7 @@ export function previewEdge(visual: EdgeVisual, source: Point, target: Point): E
 		x: end.x + (point.x - tip.x) * Math.cos(angle) - (point.y - tip.y) * Math.sin(angle),
 		y: end.y + (point.x - tip.x) * Math.sin(angle) + (point.y - tip.y) * Math.cos(angle)
 	}));
-	const labelAnchor = shift(visual.labelAnchor, nearestWeight(visual.labelAnchor));
+	const labelAnchor = visual.labelStatus === 2 ? visual.labelAnchor : shift(visual.labelAnchor, nearestWeight(visual.labelAnchor));
 	return {...visual, path, segments, arrow, labelAnchor,
 		labelBounds: {...visual.labelBounds, x: visual.labelBounds.x + labelAnchor.x - visual.labelAnchor.x,
 			y: visual.labelBounds.y + labelAnchor.y - visual.labelAnchor.y},

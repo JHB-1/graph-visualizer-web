@@ -32,7 +32,7 @@ class BrowserTests(unittest.TestCase):
 		cls.thread.start()
 		cls.origin = os.environ.get('GV_WEB_TEST_URL') or f'http://127.0.0.1:{cls.http.server_port}/graph-visualizer-web/'
 		cls.playwright = sync_playwright().start()
-		cls.browser = cls.playwright.chromium.launch(headless=True)
+		cls.browser = cls.playwright.chromium.launch(executable_path=os.environ.get('GV_CHROMIUM'), headless=True)
 
 	@classmethod
 	def tearDownClass(cls):
@@ -181,6 +181,82 @@ class BrowserTests(unittest.TestCase):
 		self.page.mouse.wheel(0, 180)
 		self.page.wait_for_function('() => gv.camera.zoom !== oldCamera.zoom')
 		self.assertEqual(self.page.evaluate('gv.metrics.fullResets'), 0)
+
+	def test_zoom_percent_input_preserves_document_and_center(self):
+		before = self.page.evaluate('({revision:gv.documentRevision,camera:{...gv.camera}})')
+		field = self.page.locator('#zoom-level')
+		field.fill('125%')
+		field.press('Enter')
+		self.page.wait_for_function('() => gv.camera.zoom === 1.25')
+		self.assertEqual(field.input_value(), '125%')
+		self.assertEqual(self.page.evaluate('gv.documentRevision'), before['revision'])
+		field.fill('10')
+		field.press('Escape')
+		self.assertEqual(self.page.evaluate('gv.camera.zoom'), 1.25)
+		field.fill('0')
+		field.press('Enter')
+		self.assertEqual(self.page.evaluate('gv.camera.zoom'), 1.25)
+		self.assertEqual(field.get_attribute('aria-invalid'), 'true')
+		field.fill('200')
+		field.press('Enter')
+		self.assertEqual(self.page.evaluate('gv.camera.zoom'), 2)
+		self.assertEqual(self.page.locator('#error').inner_text(), '')
+
+	def test_node_multiline_wrap_clip_and_export(self):
+		self.page.locator('#tab-file').click()
+		self.page.locator('#batch-text').fill(json.dumps({'updated_nodes': [{'id': '0',
+			'label': '중앙 CI 조정기\nOS + 기능 + 가용 슬롯 선택', 'size': {'width': 160, 'height': 85}, 'shape': 1}]}))
+		self.page.locator('#batch-apply').click()
+		self.page.wait_for_function("() => gv.objects.nodes.get('0').visual.node.label.includes('가용')")
+		result = self.page.evaluate('''() =>
+		{
+			const group=gv.objects.nodes.get('0').group;
+			const text=group.querySelector('text');
+			const clip=group.querySelector('clipPath rect').getBBox();
+			return {lines:text.children.length,widths:[...text.children].map(line=>line.getComputedTextLength()),
+				clipWidth:clip.width,clipped:text.getAttribute('clip-path'),title:group.querySelector('title').textContent};
+		}''')
+		self.assertGreaterEqual(result['lines'], 2)
+		self.assertTrue(all(width <= result['clipWidth'] + 0.5 for width in result['widths']))
+		self.assertTrue(result['clipped'].startswith('url(#gv-text-'))
+		self.assertIn('가용 슬롯', result['title'])
+		self.page.locator('#export-toggle').click()
+		with self.page.expect_download() as exported:
+			self.page.locator('#export-svg').click()
+
+		self.assertIn(b'clipPath', exported.value.path().read_bytes())
+
+	def test_edge_label_identity_leader_and_manual_preview(self):
+		self.page.locator('#tab-file').click()
+		self.page.locator('#batch-text').fill(json.dumps({'updated_edges': [{'id': '1', 'label': '설명',
+			'label_position': {'x': -180, 'y': -190}}]}))
+		self.page.locator('#batch-apply').click()
+		self.page.wait_for_function("() => gv.objects.edges.get('1').visual.labelStatus === 2")
+		label = self.page.locator('#edge-labels [data-id="1"]')
+		self.assertEqual(label.get_attribute('data-owner-edge'), '1')
+		self.assertIn('→', label.locator('title').text_content())
+		self.assertEqual(self.page.locator('#edges [data-id="1"] .label-leader').get_attribute('display'), 'inline')
+		label.hover()
+		self.assertIn('label-related', self.page.locator('#edges [data-id="1"]').get_attribute('class'))
+		before = self.page.evaluate("({...gv.objects.edges.get('1').visual.labelAnchor})")
+		self.page.evaluate('''() =>
+		{
+			const request=graphTransport.request.bind(graphTransport);
+			graphTransport.request=async (op,fields)=>
+			{
+				if(op==='ui') await new Promise(resolve=>setTimeout(resolve,250));
+				return request(op,fields);
+			};
+		}''')
+		box = self.page.locator('#nodes [data-id="9007199254740993"] .shape').bounding_box()
+		x, y = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+		self.page.mouse.move(x, y)
+		self.page.mouse.down()
+		self.page.mouse.move(x - 35, y + 20, steps=4)
+		self.page.evaluate('() => new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+		position = label.locator('text').evaluate('(text)=>({x:Number(text.getAttribute("x")),y:Number(text.getAttribute("y"))})')
+		self.assertEqual(position, before)
+		self.page.mouse.up()
 
 	def test_incremental_add_theme_group_and_output(self):
 		self.page.evaluate("window.savedNode = gv.objects.nodes.get('0').group; window.savedEdge = gv.objects.edges.get('1').group")

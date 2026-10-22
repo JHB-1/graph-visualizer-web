@@ -129,7 +129,7 @@
 							<option value="selection">선택 항목</option><option value="viewport">현재 화면</option></select></label>
 						<label class="check-field"><input id="export-transparent" type="checkbox">투명 배경</label>
 					</div></details>
-					<section class="control-section"><h2>증분 데이터</h2><p class="hint">노드·엣지 ID별 추가, 수정, 삭제. 전체 그래프를 재생성하지 않습니다.</p>
+					<section class="control-section"><h2>증분 데이터</h2><p class="hint">노드/엣지 ID별 추가, 수정, 삭제. 전체 그래프를 재생성하지 않습니다.</p>
 						<textarea id="batch-text" rows="10" spellcheck="false" aria-label="증분 배치 JSON">{
 	"updated_nodes": [{"id": "2", "label": "새 데이터"}]
 }</textarea><button id="batch-apply" class="primary">변경분 적용</button></section>
@@ -142,7 +142,8 @@
 		</aside>
 		<main id="workspace" aria-label="그래프 작업 공간">
 			<div class="canvas-controls"><button id="sidebar-open" aria-label="사이드바 펼치기" aria-controls="sidebar" aria-expanded="true">☰</button>
-				<output id="zoom-level" aria-label="줌 레벨">100%</output><button id="zoom-out" data-engine disabled aria-label="축소">−</button><button id="zoom-in" data-engine disabled aria-label="확대">＋</button><button id="fit">화면 맞춤</button></div>
+				<input id="zoom-level" type="text" inputmode="decimal" value="100%" aria-label="줌 배율" title="0.1% ~ 800%, Enter로 반영" autocomplete="off">
+				<button id="zoom-out" data-engine disabled aria-label="축소">−</button><button id="zoom-in" data-engine disabled aria-label="확대">＋</button><button id="fit">화면 맞춤</button></div>
 			<svg id="graph" aria-label="편집 가능한 그래프" tabindex="0"><defs><pattern id="grid" patternUnits="userSpaceOnUse" width="25" height="25"><path id="grid-path" d="M 25 0 L 0 0 0 25" fill="none" stroke-width="1" vector-effect="non-scaling-stroke" shape-rendering="crispEdges"/></pattern></defs>
 				<rect id="grid-area" width="100%" height="100%" fill="url(#grid)" pointer-events="none"/><g id="camera"><g id="frames"></g><g id="edges"></g><g id="edge-labels"></g><g id="nodes"></g></g></svg>
 			<div class="canvas-caption">Graph Visualizer <span>·</span> WebAssembly</div><p id="error" role="alert"></p>

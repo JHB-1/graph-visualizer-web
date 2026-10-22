@@ -65,10 +65,12 @@ pre {white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px;}
 #connection {font-size: 11px; color: var(--gv-muted);}
 #zoom-level
 {
-	position: absolute; left: 10px; top: 10px; z-index: 1; pointer-events: none;
+	position: absolute; left: 10px; top: 10px; z-index: 1;
 	padding: 4px 7px; border-radius: 5px; background: var(--gv-background); color: var(--gv-muted);
 	border: 1px solid var(--gv-border); font-variant-numeric: tabular-nums;
 }
+.label-related .wire {stroke: var(--gv-selection);}
+.edge-label:hover .label-background, .edge-label:focus-visible .label-background {stroke: var(--gv-selection); stroke-width: 2;}
 .export-control {position: relative;}
 #export-menu
 {

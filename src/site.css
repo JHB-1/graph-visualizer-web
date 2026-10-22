@@ -83,7 +83,7 @@ main#workspace, main#workspace.details-open {position: relative; display: block;
 	padding: 4px; background: var(--panel); border: 1px solid var(--gv-border); border-radius: 8px; box-shadow: 0 4px 16px #0001;}
 .canvas-controls button {border: 0; background: transparent; min-width: 30px;}
 #zoom-level {position: static; border: 0; background: transparent; padding: 6px 7px; font-size: 11px;
-	min-width: 58px; text-align: center; color: var(--gv-muted);}
+	width: 74px; min-width: 58px; text-align: center; color: var(--gv-muted); pointer-events: auto;}
 #sidebar-open {display: none;}
 .canvas-caption {position: absolute; right: 18px; bottom: 14px; pointer-events: none; font-size: 10px; color: var(--gv-muted); opacity: 0.6;}
 .canvas-caption span {margin: 0 7px;}

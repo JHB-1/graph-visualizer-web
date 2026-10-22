@@ -465,6 +465,13 @@ export async function startPanels(core: WorkspaceCore, report: (error: unknown) 
 				await core.update({[current.kind === 'node' ? 'updated_nodes' : 'updated_edges']: [{id: current.id, ...value}]});
 				await refresh();
 			}, report);
+			if (current.kind === 'edge')
+			{
+				const hint = document.createElement('p');
+				hint.className = 'hint';
+				hint.textContent = '라벨은 이 엣지의 설명입니다. 자동 위치는 선을 따라가며, 라벨 좌표를 지정하면 고정됩니다.';
+				byId('selection-form').append(hint);
+			}
 		}
 
 		form('theme-form', {node: state.defaults.node, edge: state.defaults.edge, nodeSize: state.defaults.nodeSize,
